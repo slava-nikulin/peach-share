@@ -1,10 +1,45 @@
 import { onMount } from 'solid-js'
 import { initFlowbite } from 'flowbite'
+import { useNavigate } from '@solidjs/router'
+import type { JSX } from 'solid-js/jsx-runtime'
 
 export default function Home() {
   onMount(() => {
-    initFlowbite()
+    // initFlowbite()
   })
+
+  let dialogRef!: HTMLDialogElement
+  let openerBtn!: HTMLButtonElement
+  let firstInput!: HTMLInputElement
+
+  const openCreateRoomModal = () => {
+    dialogRef.showModal()
+    queueMicrotask(() => firstInput?.focus())
+  }
+
+  const closeCreateRoomModal = () => {
+    dialogRef.close()
+    openerBtn?.focus()
+  }
+
+  const defaultCode = String(Math.floor(Math.random() * 10000)).padStart(4, '0')
+
+  const navigate = useNavigate()
+
+  const onSubmitCreateRoom: JSX.EventHandler<HTMLFormElement, SubmitEvent> = (
+    e
+  ) => {
+    e.preventDefault()
+    const form = e.currentTarget
+    if (!form.reportValidity()) return // нативная валидация
+    const code = (form.elements.namedItem('room-code') as HTMLInputElement)
+      .value
+
+    // выполнить свой код (например, запрос/логика)
+    // ...
+
+    navigate(`/rooms/${code}`) // переход на новый роут
+  }
 
   return (
     <section class="mx-auto max-w-xl space-y-6">
@@ -23,11 +58,12 @@ export default function Home() {
       <div class="grid grid-rows-2 gap-y-5 justify-stretch items-center md:flex md:flex-row md:justify-around ">
         {/* Create */}
         <button
+          ref={(el) => (openerBtn = el)}
           type="button"
-          data-modal-target="create-room-modal"
-          data-modal-toggle="create-room-modal"
-          aria-label="Create room"
-          class="inline-flex items-center justify-center rounded-xl bg-slate-900 text-white px-5 py-2.5 text-lg
+          onClick={openCreateRoomModal}
+          aria-haspopup="dialog"
+          aria-controls="create-room-modal"
+          class="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-pink-400 via-pink-500 to-pink-600 text-white px-5 py-2.5 text-lg
                shadow-sm hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-slate-900/20 hover:cursor-pointer"
         >
           Create room
@@ -39,7 +75,7 @@ export default function Home() {
           data-modal-target="join-room-modal"
           data-modal-toggle="join-room-modal"
           aria-label="Join room"
-          class="inline-flex items-center justify-center rounded-xl border border-slate-900/10 bg-gray-100 px-5 py-2.5 text-lg
+          class="inline-flex items-center justify-center rounded-xl border border-slate-900/10 bg-white px-5 py-2.5 text-lg
                hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-900/10 hover:cursor-pointer"
         >
           Join room
@@ -49,109 +85,110 @@ export default function Home() {
       {/* --- Modal: Создать комнату --- */}
       <div
         id="create-room-modal"
-        tabIndex={-1}
+        tabindex="-1"
         aria-hidden="true"
         class="hidden overflow-y-auto overflow-x-hidden fixed top-0 right-0 left-0 z-50 justify-center items-center w-full md:inset-0 h-[calc(100%-1rem)] max-h-full"
       >
-        <div class="relative p-4 w-full max-w-lg max-h-full">
-          <div class="relative bg-white rounded-2xl shadow-sm border border-gray-200">
-            <div class="flex items-center justify-between p-4 md:p-5 border-b border-gray-200 rounded-t">
-              <h3 class="text-base md:text-lg font-semibold text-gray-900">
-                Создать комнату
-              </h3>
-              <button
-                type="button"
-                data-modal-hide="create-room-modal"
-                class="text-gray-400 bg-transparent hover:bg-gray-100 hover:text-gray-900 rounded-lg text-sm w-8 h-8 inline-flex justify-center items-center"
-              >
-                <span class="sr-only">Закрыть</span>✕
-              </button>
-            </div>
-            <div class="p-4 md:p-5 space-y-4">
-              <label class="block text-sm font-medium">
-                Название (опционально)
-              </label>
-              <input
-                class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-4 focus:ring-orange-200"
-                placeholder="Например: 'Кухня' или 'Команда-А'"
-              />
-              <div class="flex items-center gap-2 pt-2">
-                <input
-                  id="ttl"
-                  type="checkbox"
-                  class="rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                />
-                <label for="ttl" class="text-sm">
-                  Удалять комнату, если пусто 2 минуты
-                </label>
-              </div>
-            </div>
-            <div class="flex items-center justify-end gap-2 p-4 md:p-5 border-t border-gray-200 rounded-b">
-              <button
-                data-modal-hide="create-room-modal"
-                type="button"
-                class="py-2 px-4 text-sm font-medium text-gray-900 bg-white rounded-lg border border-gray-200 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-100"
-              >
-                Отмена
-              </button>
-              <button
-                data-modal-hide="create-room-modal"
-                type="button"
-                class="text-white bg-slate-900 hover:opacity-90 focus:ring-4 focus:outline-none focus:ring-slate-900/20 font-medium rounded-lg text-sm px-5 py-2.5 text-center"
-              >
-                Создать
-              </button>
+        <div class="relative p-4 w-full max-w-xs max-h-full">
+          <div class="relative bg-white rounded-lg shadow-sm dark:bg-gray-700 overflow-hidden">
+            <div class="p-5 md:p-6">
+              <form class="space-y-4" onSubmit={onSubmitCreateRoom}>
+                <div>
+                  <label
+                    for="room-code"
+                    class="block mb-3 font-semibold text-lg text-gray-900 dark:text-white"
+                  >
+                    Room number(4 digits)
+                  </label>
+                  <input
+                    id="room-code"
+                    name="room-code"
+                    type="text"
+                    inputmode="numeric"
+                    pattern="\d{4}"
+                    maxlength="4"
+                    class="w-full bg-gray-50 border border-gray-300 text-gray-900 text-lg rounded-lg
+                 focus:outline-none focus:ring-0
+                 invalid:border-red-500 user-invalid:border-red-500
+                 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white"
+                    placeholder="0000"
+                    value={defaultCode}
+                    required
+                  />
+                </div>
+
+                {/* footer */}
+                <div class="flex items-center justify-between gap-2 pt-2">
+                  <button
+                    type="button"
+                    data-modal-hide="create-room-modal"
+                    class="text-white bg-gradient-to-r from-purple-500 via-purple-600 to-purple-700 hover:opacity-90 focus:ring-4 focus:outline-none focus:ring-slate-900/20 font-medium rounded-lg text-lg px-5 py-2.5 text-center"
+                  >
+                    Create
+                  </button>
+                  <button
+                    type="button"
+                    data-modal-hide="create-room-modal"
+                    class="py-2 px-4 text-lg font-medium text-gray-900 bg-white rounded-lg border border-gray-200 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
       </div>
 
-      {/* --- Modal: Подключиться к комнате --- */}
+      {/* --- Modal: присоединиться к комнате --- */}
       <div
         id="join-room-modal"
-        tabIndex={-1}
+        tabindex="-1"
         aria-hidden="true"
         class="hidden overflow-y-auto overflow-x-hidden fixed top-0 right-0 left-0 z-50 justify-center items-center w-full md:inset-0 h-[calc(100%-1rem)] max-h-full"
       >
-        <div class="relative p-4 w-full max-w-lg max-h-full">
-          <div class="relative bg-white rounded-2xl shadow-sm border border-gray-200">
-            <div class="flex items-center justify-between p-4 md:p-5 border-b border-gray-200 rounded-t">
-              <h3 class="text-base md:text-lg font-semibold text-gray-900">
-                Подключиться к комнате
-              </h3>
-              <button
-                type="button"
-                data-modal-hide="join-room-modal"
-                class="text-gray-400 bg-transparent hover:bg-gray-100 hover:text-gray-900 rounded-lg text-sm w-8 h-8 inline-flex justify-center items-center"
-              >
-                <span class="sr-only">Закрыть</span>✕
-              </button>
-            </div>
-            <div class="p-4 md:p-5 space-y-4">
-              <label class="block text-sm font-medium">Код комнаты</label>
-              <input
-                class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm tracking-widest uppercase focus:outline-none focus:ring-4 focus:ring-orange-200"
-                placeholder="Например: 7F2K-Q8"
-              />
-              <p class="text-xs text-slate-500">
-                Советуем находиться в одном Wi-Fi для лучшего P2P.
-              </p>
-            </div>
-            <div class="flex items-center justify-end gap-2 p-4 md:p-5 border-t border-gray-200 rounded-b">
-              <button
-                data-modal-hide="join-room-modal"
-                type="button"
-                class="py-2 px-4 text-sm font-medium text-gray-900 bg-white rounded-lg border border-gray-200 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-100"
-              >
-                Отмена
-              </button>
-              <button
-                data-modal-hide="join-room-modal"
-                type="button"
-                class="text-slate-900 bg-white border border-slate-200 hover:bg-slate-50 focus:ring-4 focus:outline-none focus:ring-slate-900/10 font-medium rounded-lg text-sm px-5 py-2.5 text-center"
-              >
-                Подключиться
-              </button>
+        <div class="relative p-4 w-full max-w-xs max-h-full">
+          <div class="relative bg-white rounded-lg shadow-sm dark:bg-gray-700">
+            <div class="p-5 md:p-6">
+              <form class="space-y-4">
+                <div>
+                  <label
+                    for="room-code"
+                    class="block mb-3 font-semibold text-lg text-gray-900 dark:text-white"
+                  >
+                    Room number(4 digits)
+                  </label>
+                  <input
+                    id="room-code"
+                    name="room-code"
+                    type="number"
+                    inputMode="numeric"
+                    pattern="\d{4}"
+                    maxLength={4}
+                    class="bg-gray-50 border border-gray-300 text-gray-900 text-lg rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+                    placeholder="0000"
+                    required
+                  />
+                </div>
+
+                {/* footer */}
+                <div class="flex items-center justify-between gap-2 pt-2">
+                  <button
+                    type="button"
+                    data-modal-hide="create-room-modal"
+                    class="text-white bg-slate-900 hover:opacity-90 focus:ring-4 focus:outline-none focus:ring-slate-900/20 font-medium rounded-lg text-lg px-5 py-2.5 text-center"
+                  >
+                    Join
+                  </button>
+                  <button
+                    type="button"
+                    data-modal-hide="create-room-modal"
+                    class="py-2 px-4 text-lg font-medium text-gray-900 bg-white rounded-lg border border-gray-200 hover:bg-gray-100 focus:outline-none focus:ring-4 focus:ring-gray-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
