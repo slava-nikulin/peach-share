@@ -1,52 +1,49 @@
+import { onMount } from 'solid-js'
+import { initFlowbite } from 'flowbite'
+
 export default function Home() {
+  onMount(() => {
+    initFlowbite()
+  })
+
   return (
-    <div class="space-y-8">
-      <div>
-        <h1 class="text-3xl md:text-4xl font-semibold tracking-tight">
-          Локальный обмен файлами
-        </h1>
-        <p class="mt-2 text-slate-600 max-w-prose">
-          Минималистичный UI. Создайте комнату или подключитесь по коду. Логика
-          будет добавлена позже.
-        </p>
+    <section class="mx-auto max-w-xl space-y-6">
+      {/* Instructions */}
+      <div class="rounded-2xl border border-white/70 bg-white/60 p-5 shadow-sm mb-8">
+        <h2 class="text-xl font-semibold mb-2">Instructions</h2>
+        <ol class="list-decimal ml-5 space-y-1 text-xl text-slate-700">
+          <li>Connect devices to the same Wi-Fi network.</li>
+          <li>Create a room on one device.</li>
+          <li>Connect from another device using the code/QR code.</li>
+          <li>File sharing — in the next step.</li>
+        </ol>
       </div>
 
-      <div class="grid gap-4 sm:grid-cols-2">
-        {/* Карточка: Создать */}
-        <div class="rounded-2xl border border-white/70 bg-white/70 p-6 shadow-sm flex flex-col">
-          <h2 class="text-lg font-semibold">Создать комнату</h2>
-          <p class="text-sm text-slate-600 mt-1">
-            Сгенерируем код комнаты и QR для подключения.
-          </p>
-          <div class="mt-auto pt-4">
-            <button
-              type="button"
-              data-modal-target="create-room-modal"
-              data-modal-toggle="create-room-modal"
-              class="w-full sm:w-auto inline-flex items-center justify-center rounded-xl bg-slate-900 text-white px-4 py-2 text-sm hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-slate-900/20"
-            >
-              Создать
-            </button>
-          </div>
-        </div>
+      {/* Actions */}
+      <div class="grid grid-rows-2 gap-y-5 justify-stretch items-center md:flex md:flex-row md:justify-around ">
+        {/* Create */}
+        <button
+          type="button"
+          data-modal-target="create-room-modal"
+          data-modal-toggle="create-room-modal"
+          aria-label="Create room"
+          class="inline-flex items-center justify-center rounded-xl bg-slate-900 text-white px-5 py-2.5 text-lg
+               shadow-sm hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-slate-900/20 hover:cursor-pointer"
+        >
+          Create room
+        </button>
 
-        {/* Карточка: Подключиться */}
-        <div class="rounded-2xl border border-white/70 bg-white/70 p-6 shadow-sm flex flex-col">
-          <h2 class="text-lg font-semibold">Подключиться к комнате</h2>
-          <p class="text-sm text-slate-600 mt-1">
-            Введите код, полученный от создателя, или отсканируйте QR.
-          </p>
-          <div class="mt-auto pt-4">
-            <button
-              type="button"
-              data-modal-target="join-room-modal"
-              data-modal-toggle="join-room-modal"
-              class="w-full sm:w-auto inline-flex items-center justify-center rounded-xl border border-slate-900/10 bg-white px-4 py-2 text-sm hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-900/10"
-            >
-              Подключиться
-            </button>
-          </div>
-        </div>
+        {/* Join */}
+        <button
+          type="button"
+          data-modal-target="join-room-modal"
+          data-modal-toggle="join-room-modal"
+          aria-label="Join room"
+          class="inline-flex items-center justify-center rounded-xl border border-slate-900/10 bg-gray-100 px-5 py-2.5 text-lg
+               hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-900/10 hover:cursor-pointer"
+        >
+          Join room
+        </button>
       </div>
 
       {/* --- Modal: Создать комнату --- */}
@@ -159,6 +156,6 @@ export default function Home() {
           </div>
         </div>
       </div>
-    </div>
+    </section>
   )
 }
