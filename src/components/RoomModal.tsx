@@ -1,104 +1,78 @@
-import { onMount, onCleanup, createEffect, createSignal } from 'solid-js'
+// RoomModal.tsx
+import { onMount, onCleanup } from 'solid-js'
 import { Modal } from 'flowbite'
 import type { ModalOptions, ModalInterface } from 'flowbite'
-import ModalManager from '../utils/modalManager'
+
+export type RoomModalHandle = {
+  show: () => void
+  hide: () => void
+}
 
 interface RoomModalProps {
-  isOpen: boolean
-  onClose: () => void
-  onSubmitRoom: (event: Event) => void
-  defaultCode: string
-  modalId?: string
-  title?: string // Добавим возможность кастомизировать заголовок
+  onReady?: (api: RoomModalHandle) => void // наружный контроллер
+  onClose?: () => void // колбэк закрытия
+  onSubmitRoom: (event: Event) => void // отправка формы
+  title?: string // заголовок окна
+  submitBtnClass?: string
+  submitBtnText?: string
+  modalId?: string // кастомный ID
+  fillWithDefault?: boolean // автозаполнение при открытии
 }
 
 export default function RoomModal(props: RoomModalProps) {
   let modalElement: HTMLDivElement | undefined
+  let inputEl: HTMLInputElement | undefined
   let modal: ModalInterface | undefined
 
-  // Генерируем уникальный ID для каждого компонента
-  const [uniqueModalId] = createSignal(
-    props.modalId ||
-      `create-room-modal-${Math.random().toString(36).substr(2, 9)}`
-  )
+  const uniqueModalId =
+    props.modalId || `room-modal-${Math.random().toString(36).slice(2, 9)}`
+  const inputId = `room-code-${uniqueModalId.split('-').pop()}`
 
-  // Уникальный input ID тоже нужен
-  const [inputId] = createSignal(
-    `room-code-${uniqueModalId().split('-').pop()}`
-  )
+  const random4 = () =>
+    Math.floor(Math.random() * 10000)
+      .toString()
+      .padStart(4, '0')
+
+  const fillWithDefault = () => {
+    const code = random4()
+    if (inputEl) inputEl.value = code
+  }
 
   onMount(() => {
     if (!modalElement) return
-
-    // Проверяем через Modal Manager, не существует ли уже экземпляр
-    if (ModalManager.isModalOpen(uniqueModalId())) {
-      console.warn(`Modal instance with ID ${uniqueModalId()} already exists`)
-      return
-    }
 
     const modalOptions: ModalOptions = {
       placement: 'center',
       backdrop: 'dynamic',
       backdropClasses: 'bg-gray-900/50 dark:bg-gray-900/80 fixed inset-0 z-40',
       closable: true,
-      onHide: () => {
-        console.log(`Modal ${uniqueModalId()} is hidden`)
-        // Уведомляем Modal Manager о закрытии
-        ModalManager.unregisterModal(uniqueModalId())
-        props.onClose()
-      },
       onShow: () => {
-        console.log(`Modal ${uniqueModalId()} is shown`)
-        // Автофокус на input при открытии
-        const input = modalElement?.querySelector(
-          `#${inputId()}`
-        ) as HTMLInputElement
-        if (input) {
-          setTimeout(() => input.focus(), 150)
-        }
+        if (props.fillWithDefault) fillWithDefault()
+        setTimeout(() => inputEl?.focus(), 100)
       },
-      onToggle: () => {
-        console.log(`Modal ${uniqueModalId()} has been toggled`)
+      onHide: () => {
+        props.onClose?.()
       },
     }
 
-    try {
-      // Создаем экземпляр модального окна
-      modal = new Modal(modalElement, modalOptions)
+    modal = new Modal(modalElement, modalOptions)
 
-      // Регистрируем в Modal Manager
-      ModalManager.registerModal(uniqueModalId(), modal)
-    } catch (error) {
-      console.error(`Failed to create modal ${uniqueModalId()}:`, error)
+    const api: RoomModalHandle = {
+      show: () => modal?.show(),
+      hide: () => modal?.hide(),
     }
-  })
 
-  // Реактивно управляем видимостью модального окна
-  createEffect(() => {
-    if (!modal) return
-
-    try {
-      if (props.isOpen) {
-        // Закрываем все другие модальные окна перед открытием нового
-        ModalManager.hideAllModals()
-        modal.show()
-      } else {
-        modal.hide()
-      }
-    } catch (error) {
-      console.error(`Error controlling modal ${uniqueModalId()}:`, error)
-    }
+    props.onReady?.(api)
   })
 
   onCleanup(() => {
-    // Modal Manager сам очистит при unregister
-    ModalManager.unregisterModal(uniqueModalId())
+    try {
+      modal?.hide()
+    } catch {}
   })
 
-  const handleClose = () => {
-    if (modal) {
-      modal.hide() // Modal Manager автоматически unregister через onHide callback
-    }
+  const handleBackdropClick = (e: MouseEvent) => {
+    if (e.target === e.currentTarget) modal?.hide()
   }
 
   const handleFormSubmit = (event: Event) => {
@@ -106,37 +80,29 @@ export default function RoomModal(props: RoomModalProps) {
     props.onSubmitRoom(event)
   }
 
-  const handleBackdropClick = (e: MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      handleClose()
-    }
-  }
-
   return (
     <div
       ref={modalElement}
-      id={uniqueModalId()}
+      id={uniqueModalId}
       tabindex="-1"
       aria-hidden="true"
       class="hidden overflow-y-auto overflow-x-hidden fixed top-0 right-0 left-0 z-50 justify-center items-center w-full md:inset-0 h-[calc(100%-1rem)] max-h-full"
       onClick={handleBackdropClick}
     >
       <div class="relative p-4 w-full max-w-sm max-h-full">
-        {/* Modal content */}
-        <div class="relative bg-gray-50 rounded-lg shadow-lg border border-gray-600 ">
-          {/* Modal header */}
+        <div class="relative bg-gray-50 rounded-lg shadow-lg border border-gray-600">
           <div class="flex items-center justify-center p-4 md:p-5 border-b rounded-t border-gray-200">
-            <h3 class="text-xl font-semibold text-gray-900 ">
+            <h3 class="text-xl font-semibold text-gray-900">
               {props.title || '_modal_title_'}
             </h3>
           </div>
 
-          {/* Modal body */}
           <div class="p-4 md:p-5">
             <form class="space-y-4" onSubmit={handleFormSubmit}>
               <div class="flex flex-col items-center space-y-3">
                 <input
-                  id={inputId()}
+                  ref={(el) => (inputEl = el)}
+                  id={inputId}
                   name="room-code"
                   type="text"
                   inputmode="numeric"
@@ -147,28 +113,28 @@ export default function RoomModal(props: RoomModalProps) {
                    invalid:border-red-500 user-invalid:border-red-500
                    transition-colors px-3 py-2.5"
                   placeholder="0000"
-                  value={props.defaultCode}
                   required
                   autocomplete="off"
                 />
-                <p class="mt-2 text-sm text-gray-500 -400">
+                <p class="mt-2 text-sm text-gray-500">
                   Enter a 4-digit room code
                 </p>
               </div>
 
-              {/* Modal footer */}
-              <div class="flex items-center justify-between gap-3 pt-4 border-t border-gray-200 ">
+              <div class="flex items-center justify-around gap-3 pt-4 border-t border-gray-200">
                 <button
                   type="submit"
-                  class="text-white bg-gradient-to-r from-purple-500 via-purple-600 to-purple-700 hover:from-purple-600 hover:via-purple-700 hover:to-purple-800 focus:ring-4 focus:outline-none focus:ring-purple-300 font-medium rounded-lg 
-                  text-md px-5 py-2.5 text-center transition-all duration-200 shadow-lg hover:shadow-xl"
+                  class={` ${props.submitBtnClass ?? ''}
+                   focus:ring-4 focus:outline-none font-medium rounded-lg text-md px-5 py-2.5 text-center
+                  transition-all duration-200 shadow-lg hover:shadow-xl hover:cursor-pointer`}
                 >
-                  Create Room
+                  {props.submitBtnText || '_submit_btn_text_'}
                 </button>
                 <button
                   type="button"
-                  class="py-2.5 px-5 text-md font-medium text-gray-900 focus:outline-none bg-white rounded-lg border border-gray-200 hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:ring-gray-100 transition-colors"
-                  onClick={handleClose}
+                  class="py-2.5 px-5 text-md font-medium text-gray-900 focus:outline-none bg-white rounded-lg border border-gray-200 hover:bg-gray-100 hover:text-blue-700
+                   focus:z-10 focus:ring-4 focus:ring-gray-100 transition-colors hover:cursor-pointer"
+                  onClick={() => modal?.hide()}
                 >
                   Cancel
                 </button>

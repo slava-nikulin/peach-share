@@ -1,56 +1,24 @@
-import { createSignal, onMount } from 'solid-js'
-import RoomModal from '../components/RoomModal'
+import RoomModal, { type RoomModalHandle } from '../components/RoomModal'
 
 export default function Home() {
-  const [isModalOpen, setIsModalOpen] = createSignal(false)
-  const [defaultCode, setDefaultCode] = createSignal('0000')
+  let createRoomModal: RoomModalHandle | undefined
 
-  // Генерация случайного кода комнаты
-  const generateRandomCode = () => {
-    const code = Math.floor(Math.random() * 10000)
-      .toString()
-      .padStart(4, '0')
-    setDefaultCode(code)
+  const handleCreateRoomForm = (event: Event) => {
+    const form = event.target as HTMLFormElement
+    const data = new FormData(form)
+    const code = data.get('room-code') as string
+    console.log('Create room:', code)
+    createRoomModal?.hide()
   }
 
-  onMount(() => {
-    // Генерируем код при загрузке
-    generateRandomCode()
-  })
+  let joinRoomModal: RoomModalHandle | undefined
 
-  const handleOpenModal = () => {
-    setIsModalOpen(true)
-  }
-
-  const handleCloseModal = () => {
-    setIsModalOpen(false)
-  }
-
-  const handleSubmitCreateRoom = (event: Event) => {
-    const formData = new FormData(event.target as HTMLFormElement)
-    const roomCode = formData.get('room-code') as string
-
-    // Валидация кода комнаты
-    if (!/^\d{4}$/.test(roomCode)) {
-      alert('Please enter a valid 4-digit room code')
-      return
-    }
-
-    console.log('Creating room with code:', roomCode)
-
-    // Здесь ваша логика создания комнаты
-    try {
-      // Имитация API вызова
-      setTimeout(() => {
-        alert(`Room ${roomCode} created successfully!`)
-        setIsModalOpen(false)
-        // Генерируем новый код для следующего раза
-        generateRandomCode()
-      }, 500)
-    } catch (error) {
-      console.error('Error creating room:', error)
-      alert('Failed to create room. Please try again.')
-    }
+  const handleJoinRoomForm = (event: Event) => {
+    const form = event.target as HTMLFormElement
+    const data = new FormData(form)
+    const code = data.get('room-code') as string
+    console.log('Join room:', code)
+    joinRoomModal?.hide()
   }
 
   return (
@@ -72,7 +40,7 @@ export default function Home() {
           {/* Create */}
           <button
             type="button"
-            onClick={handleOpenModal}
+            onClick={() => createRoomModal?.show()}
             class="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-pink-400 via-pink-500 to-pink-600 text-white px-5 py-2.5 text-lg
                shadow-sm hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-slate-900/20 hover:cursor-pointer"
           >
@@ -82,6 +50,7 @@ export default function Home() {
           {/* Join */}
           <button
             type="button"
+            onClick={() => joinRoomModal?.show()}
             class="inline-flex items-center justify-center rounded-xl border border-slate-900/10 bg-white px-5 py-2.5 text-lg
                hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-900/10 hover:cursor-pointer"
           >
@@ -90,10 +59,23 @@ export default function Home() {
         </div>
       </section>
       <RoomModal
-        isOpen={isModalOpen()}
-        onClose={handleCloseModal}
-        onSubmitRoom={handleSubmitCreateRoom}
-        defaultCode={defaultCode()}
+        modalId="create-room-modal"
+        title="Create Room"
+        fillWithDefault={true}
+        onSubmitRoom={handleCreateRoomForm}
+        onReady={(api) => (createRoomModal = api)}
+        submitBtnClass="text-white bg-gradient-to-r from-purple-500 via-purple-600 to-purple-700 hover:from-purple-600 hover:via-purple-700 hover:to-purple-800 focus:ring-purple-300"
+        submitBtnText="Create"
+      />
+
+      <RoomModal
+        modalId="join-room-modal"
+        title="Join Room"
+        fillWithDefault={false}
+        onSubmitRoom={handleJoinRoomForm}
+        onReady={(api) => (joinRoomModal = api)}
+        submitBtnClass="text-white bg-gradient-to-r from-gray-500 via-gray-600 to-gray-700 hover:from-gray-600 hover:via-gray-700 hover:to-gray-800 focus:ring-gray-300"
+        submitBtnText="Join"
       />
     </div>
   )
