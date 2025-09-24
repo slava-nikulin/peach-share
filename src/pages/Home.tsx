@@ -1,24 +1,22 @@
 import RoomModal, { type RoomModalHandle } from '../components/RoomModal'
+import { createRoomSession } from '../lib/webrtc'
 
 export default function Home() {
   let createRoomModal: RoomModalHandle | undefined
 
-  const handleCreateRoomForm = (event: Event) => {
-    const form = event.target as HTMLFormElement
-    const data = new FormData(form)
-    const code = data.get('room-code') as string
-    console.log('Create room:', code)
-    createRoomModal?.hide()
+  const handleCreateRoomForm = (roomCode: string) => {
+    console.log('Create room:', roomCode)
+    createRoomSession({
+      roomId: roomCode,
+      signalingUrl: SIGNALING_URL,
+      iceServers: ICE_SERVERS,
+    })
   }
 
   let joinRoomModal: RoomModalHandle | undefined
 
-  const handleJoinRoomForm = (event: Event) => {
-    const form = event.target as HTMLFormElement
-    const data = new FormData(form)
-    const code = data.get('room-code') as string
-    console.log('Join room:', code)
-    joinRoomModal?.hide()
+  const handleJoinRoomForm = (roomCode: string) => {
+    console.log('Join room:', roomCode)
   }
 
   return (

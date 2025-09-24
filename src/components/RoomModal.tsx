@@ -1,5 +1,6 @@
 // RoomModal.tsx
 import { onMount, onCleanup } from 'solid-js'
+import { useNavigate } from '@solidjs/router'
 import { Modal } from 'flowbite'
 import type { ModalOptions, ModalInterface } from 'flowbite'
 
@@ -11,7 +12,7 @@ export type RoomModalHandle = {
 interface RoomModalProps {
   onReady?: (api: RoomModalHandle) => void // наружный контроллер
   onClose?: () => void // колбэк закрытия
-  onSubmitRoom: (event: Event) => void // отправка формы
+  onSubmitRoom?: (roomCode: string) => Promise<void> | void
   title?: string // заголовок окна
   submitBtnClass?: string
   submitBtnText?: string
@@ -37,6 +38,8 @@ export default function RoomModal(props: RoomModalProps) {
     const code = random4()
     if (inputEl) inputEl.value = code
   }
+
+  const navigate = useNavigate()
 
   onMount(() => {
     if (!modalElement) return
@@ -75,9 +78,31 @@ export default function RoomModal(props: RoomModalProps) {
     if (e.target === e.currentTarget) modal?.hide()
   }
 
-  const handleFormSubmit = (event: Event) => {
+  const handleFormSubmit = async (event: Event) => {
     event.preventDefault()
-    props.onSubmitRoom(event)
+
+    const form = event.target as HTMLFormElement
+    const formData = new FormData(form)
+    const roomCode = formData.get('room-code') as string
+
+    if (!/^\d{4}$/.test(roomCode)) {
+      alert('Please enter a valid 4-digit room code')
+      return
+    }
+
+    try {
+      // Вызываем callback с кодом комнаты
+      await props.onSubmitRoom?.(roomCode)
+
+      // Закрываем модальное окно
+      modal?.hide()
+
+      // Переходим на страницу комнаты
+      navigate(`/room/${roomCode}`)
+    } catch (error) {
+      console.error('Error creating room:', error)
+      alert('Failed to create room. Please try again.')
+    }
   }
 
   return (

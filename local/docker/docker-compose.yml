@@ -1,0 +1,59 @@
+version: '3.9'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: my-solid-app:1.0.0
+    container_name: solid-app
+    command: ['/app/entrypoint.sh']
+    ports:
+      - '4173:4173'
+    environment:
+      - NODE_ENV=production
+      - VITE_SIGNALING_URL=http://signaling:3000
+      - VITE_STUN_URL=stun:stunturn:3478
+    volumes:
+      - .:/app:delegated
+      - app_node_modules:/app/node_modules
+      - app_pnpm_store:/root/.local/share/pnpm/store
+    depends_on:
+      - signaling
+      - stunturn
+
+  signaling:
+    build:
+      context: ./signaling
+      dockerfile: Dockerfile.signaling
+    image: my-signaling:1.0.0
+    container_name: signaling
+    command: ['node', 'server.js']
+    ports:
+      - '3000:3000'
+
+  stunturn:
+    # Официальный образ coturn с фиксированной версией (пример: 4.6.3)
+    image: coturn/coturn:4.6.3
+    container_name: coturn
+    restart: unless-stopped
+    network_mode: 'host'
+    environment:
+      - DETECT_EXTERNAL_IP=yes
+      - STATIC_AUTH_SECRET=please-change-me
+    # Для STUN/TURN обычно открывают 3478/TCP+UDP и 5349/TCP+UDP, а также RTP-диапазон UDP
+    # При host-сети порты берутся напрямую с хоста (как рекомендуют многие гайды)
+    # см. примеры в источнике
+    # Вариант без host-сети:
+    # ports:
+    #   - "3478:3478"
+    #   - "3478:3478/udp"
+    #   - "5349:5349"
+    #   - "5349:5349/udp"
+    #   - "49152-65535:49152-65535/udp"
+    # В продакшене задайте свой секрет и домен/realm, а также при необходимости certificates для TLS
+    # Подробнее см. руководства ниже
+
+volumes:
+  app_node_modules:
+  app_pnpm_store:
