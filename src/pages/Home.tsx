@@ -6,11 +6,11 @@ export default function Home() {
 
   const handleCreateRoomForm = (roomCode: string) => {
     console.log('Create room:', roomCode)
-    createRoomSession({
-      roomId: roomCode,
-      signalingUrl: SIGNALING_URL,
-      iceServers: ICE_SERVERS,
-    })
+    // createRoomSession({
+    //   roomId: roomCode,
+    //   signalingUrl: SIGNALING_URL,
+    //   iceServers: ICE_SERVERS,
+    // })
   }
 
   let joinRoomModal: RoomModalHandle | undefined
