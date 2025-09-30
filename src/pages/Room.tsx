@@ -10,11 +10,7 @@ type FileItem = {
 type Peer = { id: string; label: string; color: string }
 
 const me: Peer = { id: 'YOU-777', label: 'You', color: 'bg-orange-400' }
-const others: Peer[] = [
-  { id: 'B4M9-Z2', label: 'Anna', color: 'bg-rose-400' },
-  { id: 'J1X7-P5', label: 'Max', color: 'bg-amber-400' },
-  { id: 'Q8D2-L1', label: 'Ira', color: 'bg-teal-400' },
-]
+const others: Peer[] = [{ id: 'B4M9-Z2', label: 'Anna', color: 'bg-rose-400' }]
 
 const files: FileItem[] = [
   // мои

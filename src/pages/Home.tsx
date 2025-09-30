@@ -1,12 +1,42 @@
+import { onCleanup, onMount } from 'solid-js'
+import { useNavActions } from '../components/header-actions'
 import RoomModal, { type RoomModalHandle } from '../components/RoomModal'
 import { createRoomSession } from '../lib/webrtc'
 
 export default function Home() {
-  let createRoomModal: RoomModalHandle | undefined
+  const { setNavActions: setActions } = useNavActions()
+  // let createRoomModal: RoomModalHandle | undefined
 
-  const handleCreateRoomForm = (roomCode: string) => {
-    console.log('Create room:', roomCode)
+  // const handleCreateRoomForm = (roomCode: string) => {
+  //   console.log('Create room:', roomCode)
+  // }
+
+  const createRoom = () => {
+    /* ... */
   }
+  const join = () => {
+    /* ... */
+  }
+
+  onMount(() => {
+    setActions(
+      <>
+        <button
+          class="px-3 py-1.5 text-sm rounded-lg border hover:bg-slate-50"
+          onClick={createRoom}
+        >
+          Create room
+        </button>
+        <button
+          class="px-3 py-1.5 text-sm rounded-lg bg-slate-900 text-white hover:opacity-90"
+          onClick={join}
+        >
+          Join
+        </button>
+      </>
+    )
+  })
+  onCleanup(() => setActions(null))
 
   let joinRoomModal: RoomModalHandle | undefined
 
@@ -17,7 +47,6 @@ export default function Home() {
   return (
     <div class="grid grid-cols-1">
       <section class="mx-auto">
-        {/* Instructions */}
         <div class="rounded-2xl border border-white/70 bg-white/60 p-5 shadow-sm mb-8">
           <h2 class="text-xl font-semibold mb-2">Instructions</h2>
           <ol class=" text-md max-w-md space-y-1 text-gray-500 list-decimal list-inside dark:text-slate-700">
@@ -29,8 +58,7 @@ export default function Home() {
         </div>
 
         {/* Actions */}
-        <div class="grid grid-rows-2 gap-y-5 justify-stretch items-center md:flex md:flex-row md:justify-around ">
-          {/* Create */}
+        {/* <div class="grid grid-rows-2 gap-y-5 justify-stretch items-center md:flex md:flex-row md:justify-around ">
           <button
             type="button"
             onClick={() => createRoomModal?.show()}
@@ -40,7 +68,6 @@ export default function Home() {
             Create room
           </button>
 
-          {/* Join */}
           <button
             type="button"
             onClick={() => joinRoomModal?.show()}
@@ -49,9 +76,9 @@ export default function Home() {
           >
             Join room
           </button>
-        </div>
+        </div> */}
       </section>
-      <RoomModal
+      {/* <RoomModal
         modalId="create-room-modal"
         title="Create Room"
         fillWithDefault={true}
@@ -59,7 +86,7 @@ export default function Home() {
         onReady={(api) => (createRoomModal = api)}
         submitBtnClass="text-white bg-gradient-to-r from-purple-500 via-purple-600 to-purple-700 hover:from-purple-600 hover:via-purple-700 hover:to-purple-800 focus:ring-purple-300"
         submitBtnText="Create"
-      />
+      /> */}
 
       <RoomModal
         modalId="join-room-modal"
