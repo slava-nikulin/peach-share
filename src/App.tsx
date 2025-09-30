@@ -2,15 +2,15 @@ import './App.css'
 import { Router } from '@solidjs/router'
 import { RootLayout } from './components/RootLayout'
 import { Routes } from './components/Routes'
-import './config/firebase'
-import { HeaderActionsProvider } from './components/header-actions'
+import { NavActionsProvider } from './components/nav-actions'
+// import './config/firebase'
 
 export default function App() {
   return (
-    <HeaderActionsProvider>
+    <NavActionsProvider>
       <Router root={RootLayout}>
         <Routes />
       </Router>
-    </HeaderActionsProvider>
+    </NavActionsProvider>
   )
 }

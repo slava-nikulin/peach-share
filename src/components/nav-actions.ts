@@ -8,7 +8,7 @@ type HeaderActionsCtx = {
 
 const Ctx = createContext<HeaderActionsCtx>();
 
-export function HeaderActionsProvider(props: { children: any }) {
+export function NavActionsProvider(props: { children: any }) {
   const [actions, setActions] = createSignal<JSX.Element | null>(null);
   return Ctx.Provider({ value: { navActions: actions, setNavActions: setActions }, get children() { return props.children; } });
 }

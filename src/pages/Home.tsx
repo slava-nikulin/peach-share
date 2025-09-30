@@ -1,7 +1,9 @@
 import { onCleanup, onMount } from 'solid-js'
-import { useNavActions } from '../components/header-actions'
+import { useNavActions } from '../components/nav-actions'
 import RoomModal, { type RoomModalHandle } from '../components/RoomModal'
 import { createRoomSession } from '../lib/webrtc'
+import { db } from '../config/firebase'
+import { ref, get, child } from 'firebase/database'
 
 export default function Home() {
   const { setNavActions: setActions } = useNavActions()
@@ -14,24 +16,25 @@ export default function Home() {
   const createRoom = () => {
     /* ... */
   }
-  const join = () => {
-    /* ... */
-  }
-
   onMount(() => {
     setActions(
       <>
         <button
-          class="px-3 py-1.5 text-sm rounded-lg border hover:bg-slate-50"
+          type="button"
+          onClick={() => joinRoomModal?.show()}
+          class="rounded-lg border border-slate-900/50 bg-white pt-2 pb-1.5 px-2 text-lg
+               hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-900/10 hover:cursor-pointer"
+        >
+          Join room
+        </button>
+
+        <button
+          type="button"
           onClick={createRoom}
+          class="rounded-lg bg-gradient-to-r from-pink-400 via-pink-500 to-pink-600 text-white pt-2 pb-1.5 px-2 text-lg
+               shadow-sm hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-slate-900/20 hover:cursor-pointer"
         >
           Create room
-        </button>
-        <button
-          class="px-3 py-1.5 text-sm rounded-lg bg-slate-900 text-white hover:opacity-90"
-          onClick={join}
-        >
-          Join
         </button>
       </>
     )

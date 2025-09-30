@@ -1,5 +1,5 @@
 import { A, type RouteSectionProps } from '@solidjs/router'
-import { useNavActions } from './header-actions'
+import { useNavActions } from './nav-actions'
 
 export function RootLayout(props: RouteSectionProps) {
   const { navActions: actions } = useNavActions()
