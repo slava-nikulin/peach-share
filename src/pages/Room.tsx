@@ -1,5 +1,5 @@
 import { useLocation, useNavigate, useParams } from '@solidjs/router'
-import { ref, set } from 'firebase/database'
+import { get, onValue, ref, runTransaction, set } from 'firebase/database'
 import { createSignal, For, onCleanup, onMount, Show } from 'solid-js'
 import { db, ensureAnon, rtdbConnectedSubscribe } from '../config/firebase'
 
@@ -147,23 +147,24 @@ type RoomRecord = {
 }
 
 export default function Room() {
+  // Вспомогательные сущности (предполагается, что объявлены где-то выше в вашем коде)
   const byOwner = (ownerId: string) =>
     files.filter((f) => f.ownerId === ownerId)
 
   const params = useParams<{ id: string }>()
-  const location = useLocation<{ secret?: string }>()
+  const location = useLocation<{
+    secret?: string
+    intent?: 'create' | 'join'
+  }>()
   const navigate = useNavigate()
 
-  // Два флага: подключение RTDB и создание записи
+  // Два независимых флага: подключение RTDB и «готовность комнаты» (создана/прочитана)
   const [isConnecting, setIsConnecting] = createSignal(true)
   const [isCreating, setIsCreating] = createSignal(true)
   const [error, setError] = createSignal<string | null>(null)
   const [secret, setSecret] = createSignal<string | null>(null)
 
-  const intent =
-    location.state?.intent ?? sessionStorage.getItem(`room_intent:${id}`)
-
-  // Guard: запрет прямого входа без секрета
+  // Guard: запрет прямого входа без секрета; сохраняем secret и intent для F5
   onMount(() => {
     const s =
       location.state?.secret ??
@@ -175,44 +176,92 @@ export default function Room() {
     setSecret(s)
     sessionStorage.setItem(`room_secret:${params.id}`, s)
 
-    // Подписка на /.info/connected
-    const unsub = rtdbConnectedSubscribe(db, (connected) => {
+    const navIntent =
+      location.state?.intent ??
+      (sessionStorage.getItem(`room_intent:${params.id}`) as
+        | 'create'
+        | 'join'
+        | null)
+    if (navIntent) {
+      sessionStorage.setItem(`room_intent:${params.id}`, navIntent)
+    }
+
+    // Подписка на /.info/connected => true когда клиент подключён к RTDB
+    const unsub = rtdbConnectedSubscribe(db, (connected) =>
       setIsConnecting(!connected)
-    })
+    )
     onCleanup(unsub)
   })
 
-  // Создание записи после установления соединения и auth
+  // Дождаться снятия isConnecting()
+  const waitConnected = () =>
+    new Promise<void>((resolve) => {
+      if (!isConnecting()) return resolve()
+      const iv = setInterval(() => {
+        if (!isConnecting()) {
+          clearInterval(iv)
+          resolve()
+        }
+      }, 50)
+    })
+
+  // Основной поток: auth -> подключение -> ветка intent
   onMount(async () => {
     try {
-      // дождёмся auth (uid владельца)
+      // 1) Анонимная аутентификация (для прохождения правил на чтение/запись)
       const uid = await ensureAnon()
-      // дождёмся подключения к RTDB
-      if (isConnecting()) {
-        // простой поллинг флага; можно усложнить ожиданием события
-        const waitConnected = () =>
-          new Promise<void>((resolve) => {
-            const iv = setInterval(() => {
-              if (!isConnecting()) {
-                clearInterval(iv)
-                resolve()
-              }
-            }, 50)
-          })
-        await waitConnected()
-      }
 
-      const now = Date.now()
+      // 2) Подключение к RTDB
+      await waitConnected()
+
+      // 3) Ветвление по intent
+      const intent =
+        location.state?.intent ??
+        (sessionStorage.getItem(`room_intent:${params.id}`) as
+          | 'create'
+          | 'join'
+          | null) ??
+        'join'
+
       const roomRef = ref(db, `rooms/${params.id}`)
-      const payload: RoomRecord = {
-        room_id: params.id,
-        owner: uid,
-        created_at: now,
-        updated_at: now,
+      if (intent === 'create') {
+        const now = Date.now()
+        const payload: RoomRecord = {
+          room_id: params.id,
+          owner: uid,
+          created_at: now,
+          updated_at: now,
+        }
+        // Создать запись только если её ещё нет (атомарно)
+        await runTransaction(
+          roomRef,
+          (cur: RoomRecord | null) => cur ?? payload
+        )
+        setIsCreating(false)
+      } else if (intent === 'join') {
+        // Ветка join: просто дождаться существования комнаты без записи
+        const snap = await get(roomRef)
+        if (snap.exists()) {
+          setIsCreating(false)
+        } else {
+          await new Promise<void>((resolve, reject) => {
+            const off = onValue(
+              roomRef,
+              (s) => {
+                if (s.exists()) {
+                  off()
+                  resolve()
+                }
+              },
+              (e) => {
+                off()
+                reject(e)
+              }
+            )
+          })
+          setIsCreating(false)
+        }
       }
-      await set(roomRef, payload)
-
-      setIsCreating(false)
     } catch (e: any) {
       setError(e?.message ?? String(e))
       setIsCreating(false)
@@ -222,9 +271,10 @@ export default function Room() {
   return (
     <div class="space-y-4">
       <Show
-        when={!isCreating() || !isCreating()}
+        // Показать контент только когда подключены и завершили (создали/прочитали) запись
+        when={!isConnecting() && !isCreating()}
         fallback={
-          // Flowbite skeleton placeholder
+          // Один skeleton для обеих стадий: подключение ИЛИ ожидание комнаты
           <div class="animate-pulse space-y-4">
             <div class="h-6 bg-gray-200 rounded w-1/3" />
             <div class="h-4 bg-gray-200 rounded w-2/3" />
@@ -237,6 +287,7 @@ export default function Room() {
           fallback={<div class="text-red-600">{error()}</div>}
         >
           <h1 class="text-xl font-semibold">Room {params.id}</h1>
+
           <div class="mt-4">
             <details>
               <summary>Show secret</summary>

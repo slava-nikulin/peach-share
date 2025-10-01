@@ -7,7 +7,7 @@ export function Routes() {
   return (
     <>
       <Route path="/" component={Home} />
-      <Route path="/room/:code" component={Room} />
+      <Route path="/room/:id" component={Room} />
     </>
   )
 }
