@@ -1,4 +1,7 @@
-import { For } from 'solid-js'
+import { useLocation, useNavigate, useParams } from '@solidjs/router'
+import { ref, set } from 'firebase/database'
+import { createSignal, For, onCleanup, onMount, Show } from 'solid-js'
+import { db, ensureAnon, rtdbConnectedSubscribe } from '../config/firebase'
 
 type FileItem = {
   id: string
@@ -136,64 +139,183 @@ const files: FileItem[] = [
   },
 ]
 
+type RoomRecord = {
+  room_id: string
+  owner: string
+  created_at: number
+  updated_at: number
+}
+
 export default function Room() {
   const byOwner = (ownerId: string) =>
     files.filter((f) => f.ownerId === ownerId)
 
+  const params = useParams<{ id: string }>()
+  const location = useLocation<{ secret?: string }>()
+  const navigate = useNavigate()
+
+  // Два флага: подключение RTDB и создание записи
+  const [isConnecting, setIsConnecting] = createSignal(true)
+  const [isCreating, setIsCreating] = createSignal(true)
+  const [error, setError] = createSignal<string | null>(null)
+  const [secret, setSecret] = createSignal<string | null>(null)
+
+  const intent =
+    location.state?.intent ?? sessionStorage.getItem(`room_intent:${id}`)
+
+  // Guard: запрет прямого входа без секрета
+  onMount(() => {
+    const s =
+      location.state?.secret ??
+      sessionStorage.getItem(`room_secret:${params.id}`)
+    if (!s) {
+      navigate('/', { replace: true })
+      return
+    }
+    setSecret(s)
+    sessionStorage.setItem(`room_secret:${params.id}`, s)
+
+    // Подписка на /.info/connected
+    const unsub = rtdbConnectedSubscribe(db, (connected) => {
+      setIsConnecting(!connected)
+    })
+    onCleanup(unsub)
+  })
+
+  // Создание записи после установления соединения и auth
+  onMount(async () => {
+    try {
+      // дождёмся auth (uid владельца)
+      const uid = await ensureAnon()
+      // дождёмся подключения к RTDB
+      if (isConnecting()) {
+        // простой поллинг флага; можно усложнить ожиданием события
+        const waitConnected = () =>
+          new Promise<void>((resolve) => {
+            const iv = setInterval(() => {
+              if (!isConnecting()) {
+                clearInterval(iv)
+                resolve()
+              }
+            }, 50)
+          })
+        await waitConnected()
+      }
+
+      const now = Date.now()
+      const roomRef = ref(db, `rooms/${params.id}`)
+      const payload: RoomRecord = {
+        room_id: params.id,
+        owner: uid,
+        created_at: now,
+        updated_at: now,
+      }
+      await set(roomRef, payload)
+
+      setIsCreating(false)
+    } catch (e: any) {
+      setError(e?.message ?? String(e))
+      setIsCreating(false)
+    }
+  })
+
   return (
     <div class="space-y-4">
-      {/* Строка 1: я. grid 1/3 + 2/3 */}
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Dropzone 1/3 */}
-        <div class="rounded-2xl border border-white/70 bg-white/70 shadow-sm p-4">
-          <div class="flex items-center justify-center w-full">
-            <label
-              for="dropzone-file"
-              class="flex flex-col items-center justify-center w-full h-44 md:h-56 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100"
-            >
-              <div class="flex flex-col items-center justify-center pt-5 pb-6 text-center">
-                <svg
-                  class="w-7 h-7 mb-2 text-gray-500"
-                  viewBox="0 0 20 16"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"
-                  />
-                </svg>
-                <p class="text-sm text-gray-600">
-                  <span class="font-medium">Кликните</span> или перетащите файлы
-                </p>
-                <p class="text-xs text-gray-500">
-                  Шэр через комнату. На сервер не грузим
-                </p>
+      <Show
+        when={!isCreating() || !isCreating()}
+        fallback={
+          // Flowbite skeleton placeholder
+          <div class="animate-pulse space-y-4">
+            <div class="h-6 bg-gray-200 rounded w-1/3" />
+            <div class="h-4 bg-gray-200 rounded w-2/3" />
+            <div class="h-48 bg-gray-200 rounded" />
+          </div>
+        }
+      >
+        <Show
+          when={!error()}
+          fallback={<div class="text-red-600">{error()}</div>}
+        >
+          <h1 class="text-xl font-semibold">Room {params.id}</h1>
+          <div class="mt-4">
+            <details>
+              <summary>Show secret</summary>
+              <div class="mt-2">
+                <code class="break-all">
+                  {secret() ?? '(no secret in state)'}
+                </code>
+                <div class="mt-2">
+                  <button
+                    onClick={() =>
+                      secret() && navigator.clipboard.writeText(secret()!)
+                    }
+                    class="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200"
+                  >
+                    Copy secret
+                  </button>
+                </div>
               </div>
-              <input id="dropzone-file" type="file" class="hidden" multiple />
-            </label>
+            </details>
           </div>
-        </div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Dropzone 1/3 */}
+            <div class="rounded-2xl border border-white/70 bg-white/70 shadow-sm p-4">
+              <div class="flex items-center justify-center w-full">
+                <label
+                  for="dropzone-file"
+                  class="flex flex-col items-center justify-center w-full h-44 md:h-56 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100"
+                >
+                  <div class="flex flex-col items-center justify-center pt-5 pb-6 text-center">
+                    <svg
+                      class="w-7 h-7 mb-2 text-gray-500"
+                      viewBox="0 0 20 16"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <path
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"
+                      />
+                    </svg>
+                    <p class="text-sm text-gray-600">
+                      <span class="font-medium">Кликните</span> или перетащите
+                      файлы
+                    </p>
+                    <p class="text-xs text-gray-500">
+                      Шэр через комнату. На сервер не грузим
+                    </p>
+                  </div>
+                  <input
+                    id="dropzone-file"
+                    type="file"
+                    class="hidden"
+                    multiple
+                  />
+                </label>
+              </div>
+            </div>
 
-        {/* Мой список 2/3 */}
-        <div class="md:col-span-2 rounded-2xl border border-white/70 bg-white/70 shadow-sm flex flex-col">
-          <PeerHeader peer={me} count={byOwner(me.id).length} you />
-          <FileList files={byOwner(me.id)} mode="owner" />
-        </div>
-      </div>
-
-      {/* Строки 2–4: остальные */}
-      <For each={others.slice(0, 3)}>
-        {(p) => (
-          <div class="rounded-2xl border border-white/70 bg-white/70 shadow-sm flex flex-col">
-            <PeerHeader peer={p} count={byOwner(p.id).length} />
-            <FileList files={byOwner(p.id)} mode="guest" />
+            {/* Мой список 2/3 */}
+            <div class="md:col-span-2 rounded-2xl border border-white/70 bg-white/70 shadow-sm flex flex-col">
+              <PeerHeader peer={me} count={byOwner(me.id).length} you />
+              <FileList files={byOwner(me.id)} mode="owner" />
+            </div>
           </div>
-        )}
-      </For>
+
+          {/* Строки 2–4: остальные */}
+          <For each={others.slice(0, 3)}>
+            {(p) => (
+              <div class="rounded-2xl border border-white/70 bg-white/70 shadow-sm flex flex-col">
+                <PeerHeader peer={p} count={byOwner(p.id).length} />
+                <FileList files={byOwner(p.id)} mode="guest" />
+              </div>
+            )}
+          </For>
+        </Show>
+      </Show>
     </div>
   )
 }

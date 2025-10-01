@@ -1,20 +1,20 @@
 import { onCleanup, onMount } from 'solid-js'
 import { useNavActions } from '../components/nav-actions'
 import RoomModal, { type RoomModalHandle } from '../components/RoomModal'
-import { createRoomSession } from '../lib/webrtc'
-import { db } from '../config/firebase'
-import { ref, get, child } from 'firebase/database'
+import { genSecret32, hkdfPathId, secretToBase64Url } from '../lib/crypto'
+import { useNavigate } from '@solidjs/router'
 
 export default function Home() {
   const { setNavActions: setActions } = useNavActions()
-  // let createRoomModal: RoomModalHandle | undefined
+  const navigate = useNavigate()
 
-  // const handleCreateRoomForm = (roomCode: string) => {
-  //   console.log('Create room:', roomCode)
-  // }
-
-  const createRoom = () => {
-    /* ... */
+  const createRoom = async () => {
+    const secret = genSecret32()
+    const pathId = await hkdfPathId(secret, 'path', 128)
+    const secretB64 = secretToBase64Url(secret)
+    navigate(`/room/${pathId}`, {
+      state: { secret: secretB64, intent: 'create' },
+    })
   }
   onMount(() => {
     setActions(
@@ -22,7 +22,7 @@ export default function Home() {
         <button
           type="button"
           onClick={() => joinRoomModal?.show()}
-          class="rounded-lg border border-slate-900/50 bg-white pt-2 pb-1.5 px-2 text-lg
+          class="rounded-lg border border-slate-900/50 bg-white py-1.5 px-2 text-lg
                hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-900/10 hover:cursor-pointer"
         >
           Join room
@@ -31,10 +31,10 @@ export default function Home() {
         <button
           type="button"
           onClick={createRoom}
-          class="rounded-lg bg-gradient-to-r from-pink-400 via-pink-500 to-pink-600 text-white pt-2 pb-1.5 px-2 text-lg
+          class="rounded-lg bg-gradient-to-r from-pink-400 via-pink-500 to-pink-600 text-white py-1.5 px-2 text-lg
                shadow-sm hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-slate-900/20 hover:cursor-pointer"
         >
-          Create room
+          Start sharing
         </button>
       </>
     )

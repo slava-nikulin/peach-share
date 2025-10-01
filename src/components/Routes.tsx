@@ -1,6 +1,7 @@
 import { Route } from '@solidjs/router'
 import Home from '../pages/Home'
-import Room from '../pages/Room'
+import { lazy } from 'solid-js'
+const Room = lazy(() => import('../pages/Room'))
 
 export function Routes() {
   return (
