@@ -1,5 +1,5 @@
 import { useLocation, useNavigate, useParams } from '@solidjs/router'
-import { get, onValue, ref, runTransaction, set } from 'firebase/database'
+import { get, onValue, ref, runTransaction } from 'firebase/database'
 import { createSignal, For, onCleanup, onMount, Show } from 'solid-js'
 import { db, ensureAnon, rtdbConnectedSubscribe } from '../config/firebase'
 
@@ -147,7 +147,10 @@ type RoomRecord = {
 }
 
 export default function Room() {
-  // Вспомогательные сущности (предполагается, что объявлены где-то выше в вашем коде)
+  // Предполагается, что эти сущности у вас выше
+  // const files: FileItem[] = ...
+  // const me: Peer = ...
+  // const others: Peer[] = ...
   const byOwner = (ownerId: string) =>
     files.filter((f) => f.ownerId === ownerId)
 
@@ -158,42 +161,54 @@ export default function Room() {
   }>()
   const navigate = useNavigate()
 
-  // Два независимых флага: подключение RTDB и «готовность комнаты» (создана/прочитана)
+  // Этапы: RTDB connect, create/read room
   const [isConnecting, setIsConnecting] = createSignal(true)
   const [isCreating, setIsCreating] = createSignal(true)
   const [error, setError] = createSignal<string | null>(null)
   const [secret, setSecret] = createSignal<string | null>(null)
 
-  // Guard: запрет прямого входа без секрета; сохраняем secret и intent для F5
+  // Доп. флаги для мета-панели (эмуляция жизненного цикла)
+  const [isMetaOpen, setIsMetaOpen] = createSignal(true)
+
+  const [isAuthed, setIsAuthed] = createSignal(false)
+  const [authId, setAuthId] = createSignal<string | null>(null)
+
+  const [pakeKey, setPakeKey] = createSignal<string | null>(null)
+  const [showPakeKey, setShowPakeKey] = createSignal(false)
+
+  const [isPakeReady, setIsPakeReady] = createSignal(false)
+  const [sas, setSas] = createSignal<string | null>(null)
+
+  const [isRtcReady, setIsRtcReady] = createSignal(false)
+
+  // Guard и подписки (оставлено как есть — закомментировано вами)
   onMount(() => {
-    const s =
-      location.state?.secret ??
-      sessionStorage.getItem(`room_secret:${params.id}`)
-    if (!s) {
-      navigate('/', { replace: true })
-      return
-    }
-    setSecret(s)
-    sessionStorage.setItem(`room_secret:${params.id}`, s)
-
-    const navIntent =
-      location.state?.intent ??
-      (sessionStorage.getItem(`room_intent:${params.id}`) as
-        | 'create'
-        | 'join'
-        | null)
-    if (navIntent) {
-      sessionStorage.setItem(`room_intent:${params.id}`, navIntent)
-    }
-
-    // Подписка на /.info/connected => true когда клиент подключён к RTDB
-    const unsub = rtdbConnectedSubscribe(db, (connected) =>
-      setIsConnecting(!connected)
-    )
-    onCleanup(unsub)
+    // const s =
+    //   location.state?.secret ??
+    //   sessionStorage.getItem(`room_secret:${params.id}`)
+    // if (!s) {
+    //   navigate('/', { replace: true })
+    //   return
+    // }
+    // setSecret(s)
+    // sessionStorage.setItem(`room_secret:${params.id}`, s)
+    // const navIntent =
+    //   location.state?.intent ??
+    //   (sessionStorage.getItem(`room_intent:${params.id}`) as
+    //     | 'create'
+    //     | 'join'
+    //     | null)
+    // if (navIntent) {
+    //   sessionStorage.setItem(`room_intent:${params.id}`, navIntent)
+    // }
+    // // Подписка на /.info/connected => true когда клиент подключён к RTDB
+    // const unsub = rtdbConnectedSubscribe(db, (connected) =>
+    //   setIsConnecting(!connected)
+    // )
+    // onCleanup(unsub)
   })
 
-  // Дождаться снятия isConnecting()
+  // Ожидание RTDB-коннекта
   const waitConnected = () =>
     new Promise<void>((resolve) => {
       if (!isConnecting()) return resolve()
@@ -205,76 +220,120 @@ export default function Room() {
       }, 50)
     })
 
-  // Основной поток: auth -> подключение -> ветка intent
+  // Основной поток (оставлен ваш комментарий; реальная логика пока отключена)
   onMount(async () => {
     try {
-      // 1) Анонимная аутентификация (для прохождения правил на чтение/запись)
-      const uid = await ensureAnon()
-
-      // 2) Подключение к RTDB
-      await waitConnected()
-
-      // 3) Ветвление по intent
-      const intent =
-        location.state?.intent ??
-        (sessionStorage.getItem(`room_intent:${params.id}`) as
-          | 'create'
-          | 'join'
-          | null) ??
-        'join'
-
-      const roomRef = ref(db, `rooms/${params.id}`)
-      if (intent === 'create') {
-        const now = Date.now()
-        const payload: RoomRecord = {
-          room_id: params.id,
-          owner: uid,
-          created_at: now,
-          updated_at: now,
-        }
-        // Создать запись только если её ещё нет (атомарно)
-        await runTransaction(
-          roomRef,
-          (cur: RoomRecord | null) => cur ?? payload
-        )
-        setIsCreating(false)
-      } else if (intent === 'join') {
-        // Ветка join: просто дождаться существования комнаты без записи
-        const snap = await get(roomRef)
-        if (snap.exists()) {
-          setIsCreating(false)
-        } else {
-          await new Promise<void>((resolve, reject) => {
-            const off = onValue(
-              roomRef,
-              (s) => {
-                if (s.exists()) {
-                  off()
-                  resolve()
-                }
-              },
-              (e) => {
-                off()
-                reject(e)
-              }
-            )
-          })
-          setIsCreating(false)
-        }
-      }
+      // // 1) Анонимная аутентификация (для прохождения правил на чтение/запись)
+      // const uid = await ensureAnon()
+      // // 2) Подключение к RTDB
+      // await waitConnected()
+      // // 3) Ветвление по intent
+      // const intent =
+      //   location.state?.intent ??
+      //   (sessionStorage.getItem(`room_intent:${params.id}`) as
+      //     | 'create'
+      //     | 'join'
+      //     | null) ??
+      //   'join'
+      // const roomRef = ref(db, `rooms/${params.id}`)
+      // if (intent === 'create') {
+      //   const now = Date.now()
+      //   const payload: RoomRecord = {
+      //     room_id: params.id,
+      //     owner: uid,
+      //     created_at: now,
+      //     updated_at: now,
+      //   }
+      //   // Создать запись только если её ещё нет (атомарно)
+      //   await runTransaction(
+      //     roomRef,
+      //     (cur: RoomRecord | null) => cur ?? payload
+      //   )
+      //   setIsCreating(false)
+      // } else if (intent === 'join') {
+      //   const snap = await get(roomRef)
+      //   if (snap.exists()) {
+      //     setIsCreating(false)
+      //   } else {
+      //     let off: () => void
+      //     await new Promise<void>((resolve, reject) => {
+      //       off = onValue(
+      //         roomRef,
+      //         (s) => {
+      //           if (s.exists()) {
+      //             off()
+      //             resolve()
+      //           }
+      //         },
+      //         (e) => {
+      //           off()
+      //           reject(e)
+      //         }
+      //       )
+      //     })
+      //     setIsCreating(false)
+      //   }
+      // }
     } catch (e: any) {
       setError(e?.message ?? String(e))
-      setIsCreating(false)
+      // setIsCreating(false) // эмуляция ниже таймерами
     }
+
+    // ЭМУЛЯЦИЯ ЖИЗНЕННОГО ЦИКЛА ДЛЯ ОТЛАДКИ UI (таймеры):
+    const t1 = setTimeout(() => {
+      setIsConnecting(false) // RTDB connected
+      setIsAuthed(true)
+      setAuthId('anon:DEMO-123456')
+    }, 3200)
+
+    const t2 = setTimeout(() => {
+      setIsCreating(false) // Room created/read
+      // Генерация демо-ключа для PAKE на основе секретa/room_id
+      const seed = secret() ?? `room:${params.id}`
+      setPakeKey(`pake-${btoa(seed).slice(0, 12)}`)
+    }, 6600)
+
+    const t3 = setTimeout(() => {
+      setIsPakeReady(true)
+      // Демо SAS — визуальная проверка
+      setSas('🟣 ◻️ 🔶 ◼️')
+    }, 9100)
+
+    const t4 = setTimeout(() => {
+      setIsRtcReady(true)
+    }, 12700)
+
+    onCleanup(() => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+      clearTimeout(t3)
+      clearTimeout(t4)
+    })
   })
 
   return (
     <div class="space-y-4">
+      {/* МЕТА-ПАНЕЛЬ — видна сразу, основной контент ниже может быть скрыт скелетоном */}
+      <MetaPanel
+        open={isMetaOpen()}
+        onToggle={() => setIsMetaOpen((v) => !v)}
+        roomId={params.id}
+        isAuthed={isAuthed()}
+        authId={authId()}
+        roomReady={!isCreating()}
+        pakeKey={pakeKey()}
+        showKey={showPakeKey()}
+        onToggleShowKey={() => setShowPakeKey((v) => !v)}
+        onCopyKey={() => pakeKey() && navigator.clipboard.writeText(pakeKey()!)}
+        isPakeReady={isPakeReady()}
+        sas={sas()}
+        isRtcReady={isRtcReady()}
+        isConnecting={isConnecting()}
+      />
+
       <Show
-        // Показать контент только когда подключены и завершили (создали/прочитали) запись
         when={!isConnecting() && !isCreating()}
         fallback={
-          // Один skeleton для обеих стадий: подключение ИЛИ ожидание комнаты
           <div class="animate-pulse space-y-4">
             <div class="h-6 bg-gray-200 rounded w-1/3" />
             <div class="h-4 bg-gray-200 rounded w-2/3" />
@@ -286,28 +345,6 @@ export default function Room() {
           when={!error()}
           fallback={<div class="text-red-600">{error()}</div>}
         >
-          <h1 class="text-xl font-semibold">Room {params.id}</h1>
-
-          <div class="mt-4">
-            <details>
-              <summary>Show secret</summary>
-              <div class="mt-2">
-                <code class="break-all">
-                  {secret() ?? '(no secret in state)'}
-                </code>
-                <div class="mt-2">
-                  <button
-                    onClick={() =>
-                      secret() && navigator.clipboard.writeText(secret()!)
-                    }
-                    class="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200"
-                  >
-                    Copy secret
-                  </button>
-                </div>
-              </div>
-            </details>
-          </div>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Dropzone 1/3 */}
             <div class="rounded-2xl border border-white/70 bg-white/70 shadow-sm p-4">
@@ -368,6 +405,192 @@ export default function Room() {
         </Show>
       </Show>
     </div>
+  )
+}
+
+function MetaPanel(props: {
+  open: boolean
+  onToggle: () => void
+  roomId: string
+  isConnecting: boolean
+
+  isAuthed: boolean
+  authId: string | null
+
+  roomReady: boolean
+  pakeKey: string | null
+  showKey: boolean
+  onToggleShowKey: () => void
+  onCopyKey: () => void
+
+  isPakeReady: boolean
+  sas: string | null
+
+  isRtcReady: boolean
+}) {
+  return (
+    <div class="rounded-2xl border border-white/70 bg-white/80 backdrop-blur shadow-sm">
+      {/* Заголовок панели */}
+      <div class="flex items-center justify-between px-4 py-2 border-b border-gray-200">
+        <div class="text-sm font-semibold tracking-wide">Мета комнаты</div>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-gray-100"
+          title={props.open ? 'Скрыть панель' : 'Показать панель'}
+          aria-expanded={props.open}
+          onClick={props.onToggle}
+        >
+          <span>{props.open ? 'Скрыть' : 'Показать'}</span>
+          <svg
+            class="w-4 h-4"
+            viewBox="0 0 20 20"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d={props.open ? 'M5 12l5-5 5 5' : 'M5 8l5 5 5-5'}
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
+
+      {/* Содержимое */}
+      <div class={`px-4 py-3 ${props.open ? '' : 'hidden'}`}>
+        <div class="grid grid-cols-[140px_minmax(0,1fr)] gap-x-4 gap-y-2 items-center">
+          {/* Room ID — сразу */}
+          <MetaLabel>Room ID</MetaLabel>
+          <div class="font-mono text-sm">
+            <span class="px-2 py-0.5 rounded bg-slate-100 border border-slate-200">
+              {props.roomId}
+            </span>
+          </div>
+
+          {/* Auth ID — после isAuthed */}
+          <MetaLabel>Auth</MetaLabel>
+          <div>
+            <Show
+              when={props.isAuthed && props.authId}
+              fallback={<SkeletonBar width="w-40" />}
+            >
+              <code class="text-sm break-all">{props.authId}</code>
+            </Show>
+          </div>
+
+          {/* PAKE key — после roomReady */}
+          <MetaLabel>PAKE key</MetaLabel>
+          <div>
+            <Show
+              when={props.roomReady && props.pakeKey}
+              fallback={<SkeletonBar width="w-56" />}
+            >
+              <div class="flex items-center gap-2">
+                <input
+                  type={props.showKey ? 'text' : 'password'}
+                  value={props.pakeKey!}
+                  readonly
+                  class="text-sm px-2 py-1 rounded border border-slate-300 bg-white w-full max-w-xs"
+                />
+                <div class="inline-flex rounded-lg overflow-hidden border border-slate-200">
+                  <button
+                    type="button"
+                    class="px-2 py-1 hover:bg-slate-50"
+                    title="show"
+                    onClick={props.onToggleShowKey}
+                    aria-pressed={props.showKey}
+                  >
+                    {/* глаз / глаз-зачёркнутый */}
+                    <svg
+                      class="w-4 h-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d={
+                          props.showKey
+                            ? 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z'
+                            : 'M3 3l18 18M3.6 6.2C5.4 4.5 7.9 3 12 3c6 0 10 9 10 9a18.7 18.7 0 0 1-4.2 5.4M8.6 8.6A4 4 0 0 1 15.4 15.4'
+                        }
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="px-2 py-1 hover:bg-slate-50"
+                    title="copy"
+                    onClick={props.onCopyKey}
+                  >
+                    <svg
+                      class="w-4 h-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M9 9h10v10H9zM5 5h10v2H7v8H5z"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </Show>
+          </div>
+
+          {/* SAS — после isPakeReady */}
+          <MetaLabel>SAS</MetaLabel>
+          <div>
+            <Show
+              when={props.isPakeReady && props.sas}
+              fallback={<SkeletonBar width="w-24" />}
+            >
+              <div class="font-mono text-lg select-all">{props.sas}</div>
+            </Show>
+          </div>
+
+          {/* WebRTC — после isRtcReady */}
+          <MetaLabel>WebRTC</MetaLabel>
+          <div>
+            <Show
+              when={props.isRtcReady}
+              fallback={<SkeletonBar width="w-20" />}
+            >
+              <span class="inline-flex items-center gap-2 text-sm">
+                <span class="h-2.5 w-2.5 rounded-full bg-emerald-500 border border-white" />
+                Connected
+              </span>
+            </Show>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MetaLabel(props: { children: any }) {
+  return (
+    <div class="text-xs uppercase tracking-wide text-slate-500">
+      {props.children}
+    </div>
+  )
+}
+
+function SkeletonBar(props: { width?: string }) {
+  return (
+    <div
+      class={`h-4 bg-gray-200 rounded ${props.width ?? 'w-32'} animate-pulse`}
+    />
   )
 }
 
