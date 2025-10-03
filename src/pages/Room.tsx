@@ -1,7 +1,6 @@
 import { useLocation, useNavigate, useParams } from '@solidjs/router'
-import { get, onValue, ref, runTransaction } from 'firebase/database'
 import { createSignal, For, onCleanup, onMount, Show } from 'solid-js'
-import { db, ensureAnon, rtdbConnectedSubscribe } from '../config/firebase'
+import MetaPanel from '../components/MetaPanel'
 
 type FileItem = {
   id: string
@@ -16,136 +15,24 @@ const me: Peer = { id: 'YOU-777', label: 'You', color: 'bg-orange-400' }
 const others: Peer[] = [{ id: 'B4M9-Z2', label: 'Anna', color: 'bg-rose-400' }]
 
 const files: FileItem[] = [
-  // мои
+  // мои (shortened)
   {
     id: 'f1',
     name: 'report_Q3.pdf',
     size: '2.3 MB',
     addedAt: '10:21',
-    ownerId: me.id,
+    ownerId: 'YOU-777',
   },
   {
     id: 'f2',
     name: 'family.jpg',
     size: '1.1 MB',
     addedAt: '10:22',
-    ownerId: me.id,
-  },
-  {
-    id: 'f3',
-    name: 'notes.txt',
-    size: '4 KB',
-    addedAt: '10:22',
-    ownerId: me.id,
-  },
-  {
-    id: 'f4',
-    name: 'slides.pptx',
-    size: '18.7 MB',
-    addedAt: '10:23',
-    ownerId: me.id,
-  },
-  {
-    id: 'f1',
-    name: 'report_Q3.pdf',
-    size: '2.3 MB',
-    addedAt: '10:21',
-    ownerId: me.id,
-  },
-  {
-    id: 'f2',
-    name: 'family.jpg',
-    size: '1.1 MB',
-    addedAt: '10:22',
-    ownerId: me.id,
-  },
-  {
-    id: 'f3',
-    name: 'notes.txt',
-    size: '4 KB',
-    addedAt: '10:22',
-    ownerId: me.id,
-  },
-  {
-    id: 'f4',
-    name: 'slides.pptx',
-    size: '18.7 MB',
-    addedAt: '10:23',
-    ownerId: me.id,
-  },
-  // другие
-  {
-    id: 'f7',
-    name: 'diagram.png',
-    size: '640 KB',
-    addedAt: '10:26',
-    ownerId: 'B4M9-Z2',
-  },
-  {
-    id: 'f8',
-    name: 'invoice_4481.pdf',
-    size: '880 KB',
-    addedAt: '10:28',
-    ownerId: 'B4M9-Z2',
-  },
-  {
-    id: 'f9',
-    name: 'video_clip.mp4',
-    size: '92 MB',
-    addedAt: '10:26',
-    ownerId: 'J1X7-P5',
-  },
-  {
-    id: 'f10',
-    name: 'readme.md',
-    size: '2 KB',
-    addedAt: '10:27',
-    ownerId: 'Q8D2-L1',
-  },
-  {
-    id: 'f11',
-    name: 'photo2.jpg',
-    size: '1.6 MB',
-    addedAt: '10:29',
-    ownerId: 'Q8D2-L1',
-  },
-  {
-    id: 'f12',
-    name: 'photo3.jpg',
-    size: '1.7 MB',
-    addedAt: '10:30',
-    ownerId: 'Q8D2-L1',
-  },
-  {
-    id: 'f10',
-    name: 'readme.md',
-    size: '2 KB',
-    addedAt: '10:27',
-    ownerId: 'Q8D2-L1',
-  },
-  {
-    id: 'f11',
-    name: 'photo2.jpg',
-    size: '1.6 MB',
-    addedAt: '10:29',
-    ownerId: 'Q8D2-L1',
-  },
-  {
-    id: 'f12',
-    name: 'photo3.jpg',
-    size: '1.7 MB',
-    addedAt: '10:30',
-    ownerId: 'Q8D2-L1',
+    ownerId: 'YOU-777',
   },
 ]
 
-type RoomRecord = {
-  room_id: string
-  owner: string
-  created_at: number
-  updated_at: number
-}
-
+// MetaPanel moved to src/components/MetaPanel.tsx
 export default function Room() {
   // Предполагается, что эти сущности у вас выше
   // const files: FileItem[] = ...
@@ -160,26 +47,18 @@ export default function Room() {
     intent?: 'create' | 'join'
   }>()
   const navigate = useNavigate()
+  // mark as used (no-ops) so TS doesn't complain when these are referenced only in comments
+  void location
+  void navigate
 
   // Этапы: RTDB connect, create/read room
-  const [isConnecting, setIsConnecting] = createSignal(true)
-  const [isCreating, setIsCreating] = createSignal(true)
   const [error, setError] = createSignal<string | null>(null)
-  const [secret, setSecret] = createSignal<string | null>(null)
 
-  // Доп. флаги для мета-панели (эмуляция жизненного цикла)
-  const [isMetaOpen, setIsMetaOpen] = createSignal(true)
+  // MetaPanel owns its internal signals now. We'll call its API via apiRef.
+  let metaApi: any = null
 
-  const [isAuthed, setIsAuthed] = createSignal(false)
-  const [authId, setAuthId] = createSignal<string | null>(null)
-
-  const [pakeKey, setPakeKey] = createSignal<string | null>(null)
-  const [showPakeKey, setShowPakeKey] = createSignal(false)
-
-  const [isPakeReady, setIsPakeReady] = createSignal(false)
-  const [sas, setSas] = createSignal<string | null>(null)
-
-  const [isRtcReady, setIsRtcReady] = createSignal(false)
+  // helper to set api when mounted
+  const setMetaApi = (a: any | null) => (metaApi = a)
 
   // Guard и подписки (оставлено как есть — закомментировано вами)
   onMount(() => {
@@ -207,18 +86,6 @@ export default function Room() {
     // )
     // onCleanup(unsub)
   })
-
-  // Ожидание RTDB-коннекта
-  const waitConnected = () =>
-    new Promise<void>((resolve) => {
-      if (!isConnecting()) return resolve()
-      const iv = setInterval(() => {
-        if (!isConnecting()) {
-          clearInterval(iv)
-          resolve()
-        }
-      }, 50)
-    })
 
   // Основной поток (оставлен ваш комментарий; реальная логика пока отключена)
   onMount(async () => {
@@ -279,31 +146,43 @@ export default function Room() {
       // setIsCreating(false) // эмуляция ниже таймерами
     }
 
-    // ЭМУЛЯЦИЯ ЖИЗНЕННОГО ЦИКЛА ДЛЯ ОТЛАДКИ UI (таймеры):
+    const sleep = 3000
+    let curTimeout = 0
+
+    curTimeout += sleep
+    const t0 = setTimeout(() => {
+      metaApi?.setConnecting(false)
+    }, curTimeout)
+
+    curTimeout += sleep
     const t1 = setTimeout(() => {
-      setIsConnecting(false) // RTDB connected
-      setIsAuthed(true)
-      setAuthId('anon:DEMO-123456')
-    }, 3200)
+      metaApi?.setIsConnecting(false) // RTDB connected (still in Room)
+      metaApi?.setAuthed?.(true)
+      metaApi?.setAuthId?.('anon:DEMO-123456')
+    }, curTimeout)
 
+    curTimeout += sleep
     const t2 = setTimeout(() => {
-      setIsCreating(false) // Room created/read
       // Генерация демо-ключа для PAKE на основе секретa/room_id
-      const seed = secret() ?? `room:${params.id}`
-      setPakeKey(`pake-${btoa(seed).slice(0, 12)}`)
-    }, 6600)
+      const seed = location.state?.secret ?? `room:${params.id}`
+      metaApi?.setPakeKey?.(`pake-${btoa(seed).slice(0, 12)}`)
+      metaApi?.setRoomReady?.(true)
+    }, curTimeout)
 
+    curTimeout += sleep
     const t3 = setTimeout(() => {
-      setIsPakeReady(true)
+      metaApi?.setPakeReady?.(true)
       // Демо SAS — визуальная проверка
-      setSas('🟣 ◻️ 🔶 ◼️')
-    }, 9100)
+      metaApi?.setSas?.('🟣 ◻️ 🔶 ◼️')
+    }, curTimeout)
 
+    curTimeout += sleep
     const t4 = setTimeout(() => {
-      setIsRtcReady(true)
-    }, 12700)
+      metaApi?.setRtcReady?.(true)
+    }, curTimeout)
 
     onCleanup(() => {
+      clearTimeout(t0)
       clearTimeout(t1)
       clearTimeout(t2)
       clearTimeout(t3)
@@ -314,25 +193,10 @@ export default function Room() {
   return (
     <div class="space-y-4">
       {/* МЕТА-ПАНЕЛЬ — видна сразу, основной контент ниже может быть скрыт скелетоном */}
-      <MetaPanel
-        open={isMetaOpen()}
-        onToggle={() => setIsMetaOpen((v) => !v)}
-        roomId={params.id}
-        isAuthed={isAuthed()}
-        authId={authId()}
-        roomReady={!isCreating()}
-        pakeKey={pakeKey()}
-        showKey={showPakeKey()}
-        onToggleShowKey={() => setShowPakeKey((v) => !v)}
-        onCopyKey={() => pakeKey() && navigator.clipboard.writeText(pakeKey()!)}
-        isPakeReady={isPakeReady()}
-        sas={sas()}
-        isRtcReady={isRtcReady()}
-        isConnecting={isConnecting()}
-      />
+      <MetaPanel data={{ roomId: params.id }} apiRef={setMetaApi} />
 
       <Show
-        when={!isConnecting() && !isCreating()}
+        when={!metaApi?.getState().isRtcReady()}
         fallback={
           <div class="animate-pulse space-y-4">
             <div class="h-6 bg-gray-200 rounded w-1/3" />
@@ -405,192 +269,6 @@ export default function Room() {
         </Show>
       </Show>
     </div>
-  )
-}
-
-function MetaPanel(props: {
-  open: boolean
-  onToggle: () => void
-  roomId: string
-  isConnecting: boolean
-
-  isAuthed: boolean
-  authId: string | null
-
-  roomReady: boolean
-  pakeKey: string | null
-  showKey: boolean
-  onToggleShowKey: () => void
-  onCopyKey: () => void
-
-  isPakeReady: boolean
-  sas: string | null
-
-  isRtcReady: boolean
-}) {
-  return (
-    <div class="rounded-2xl border border-white/70 bg-white/80 backdrop-blur shadow-sm">
-      {/* Заголовок панели */}
-      <div class="flex items-center justify-between px-4 py-2 border-b border-gray-200">
-        <div class="text-sm font-semibold tracking-wide">Мета комнаты</div>
-        <button
-          type="button"
-          class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-gray-100"
-          title={props.open ? 'Скрыть панель' : 'Показать панель'}
-          aria-expanded={props.open}
-          onClick={props.onToggle}
-        >
-          <span>{props.open ? 'Скрыть' : 'Показать'}</span>
-          <svg
-            class="w-4 h-4"
-            viewBox="0 0 20 20"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d={props.open ? 'M5 12l5-5 5 5' : 'M5 8l5 5 5-5'}
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </button>
-      </div>
-
-      {/* Содержимое */}
-      <div class={`px-4 py-3 ${props.open ? '' : 'hidden'}`}>
-        <div class="grid grid-cols-[140px_minmax(0,1fr)] gap-x-4 gap-y-2 items-center">
-          {/* Room ID — сразу */}
-          <MetaLabel>Room ID</MetaLabel>
-          <div class="font-mono text-sm">
-            <span class="px-2 py-0.5 rounded bg-slate-100 border border-slate-200">
-              {props.roomId}
-            </span>
-          </div>
-
-          {/* Auth ID — после isAuthed */}
-          <MetaLabel>Auth</MetaLabel>
-          <div>
-            <Show
-              when={props.isAuthed && props.authId}
-              fallback={<SkeletonBar width="w-40" />}
-            >
-              <code class="text-sm break-all">{props.authId}</code>
-            </Show>
-          </div>
-
-          {/* PAKE key — после roomReady */}
-          <MetaLabel>PAKE key</MetaLabel>
-          <div>
-            <Show
-              when={props.roomReady && props.pakeKey}
-              fallback={<SkeletonBar width="w-56" />}
-            >
-              <div class="flex items-center gap-2">
-                <input
-                  type={props.showKey ? 'text' : 'password'}
-                  value={props.pakeKey!}
-                  readonly
-                  class="text-sm px-2 py-1 rounded border border-slate-300 bg-white w-full max-w-xs"
-                />
-                <div class="inline-flex rounded-lg overflow-hidden border border-slate-200">
-                  <button
-                    type="button"
-                    class="px-2 py-1 hover:bg-slate-50"
-                    title="show"
-                    onClick={props.onToggleShowKey}
-                    aria-pressed={props.showKey}
-                  >
-                    {/* глаз / глаз-зачёркнутый */}
-                    <svg
-                      class="w-4 h-4"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d={
-                          props.showKey
-                            ? 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z'
-                            : 'M3 3l18 18M3.6 6.2C5.4 4.5 7.9 3 12 3c6 0 10 9 10 9a18.7 18.7 0 0 1-4.2 5.4M8.6 8.6A4 4 0 0 1 15.4 15.4'
-                        }
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    class="px-2 py-1 hover:bg-slate-50"
-                    title="copy"
-                    onClick={props.onCopyKey}
-                  >
-                    <svg
-                      class="w-4 h-4"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M9 9h10v10H9zM5 5h10v2H7v8H5z"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </Show>
-          </div>
-
-          {/* SAS — после isPakeReady */}
-          <MetaLabel>SAS</MetaLabel>
-          <div>
-            <Show
-              when={props.isPakeReady && props.sas}
-              fallback={<SkeletonBar width="w-24" />}
-            >
-              <div class="font-mono text-lg select-all">{props.sas}</div>
-            </Show>
-          </div>
-
-          {/* WebRTC — после isRtcReady */}
-          <MetaLabel>WebRTC</MetaLabel>
-          <div>
-            <Show
-              when={props.isRtcReady}
-              fallback={<SkeletonBar width="w-20" />}
-            >
-              <span class="inline-flex items-center gap-2 text-sm">
-                <span class="h-2.5 w-2.5 rounded-full bg-emerald-500 border border-white" />
-                Connected
-              </span>
-            </Show>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function MetaLabel(props: { children: any }) {
-  return (
-    <div class="text-xs uppercase tracking-wide text-slate-500">
-      {props.children}
-    </div>
-  )
-}
-
-function SkeletonBar(props: { width?: string }) {
-  return (
-    <div
-      class={`h-4 bg-gray-200 rounded ${props.width ?? 'w-32'} animate-pulse`}
-    />
   )
 }
 
