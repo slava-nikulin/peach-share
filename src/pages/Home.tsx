@@ -59,38 +59,7 @@ export default function Home() {
             <li>File sharing — in the next step.</li>
           </ol>
         </div>
-
-        {/* Actions */}
-        {/* <div class="grid grid-rows-2 gap-y-5 justify-stretch items-center md:flex md:flex-row md:justify-around ">
-          <button
-            type="button"
-            onClick={() => createRoomModal?.show()}
-            class="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-pink-400 via-pink-500 to-pink-600 text-white px-5 py-2.5 text-lg
-               shadow-sm hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-slate-900/20 hover:cursor-pointer"
-          >
-            Create room
-          </button>
-
-          <button
-            type="button"
-            onClick={() => joinRoomModal?.show()}
-            class="inline-flex items-center justify-center rounded-xl border border-slate-900/10 bg-white px-5 py-2.5 text-lg
-               hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-900/10 hover:cursor-pointer"
-          >
-            Join room
-          </button>
-        </div> */}
       </section>
-      {/* <RoomModal
-        modalId="create-room-modal"
-        title="Create Room"
-        fillWithDefault={true}
-        onSubmitRoom={handleCreateRoomForm}
-        onReady={(api) => (createRoomModal = api)}
-        submitBtnClass="text-white bg-gradient-to-r from-purple-500 via-purple-600 to-purple-700 hover:from-purple-600 hover:via-purple-700 hover:to-purple-800 focus:ring-purple-300"
-        submitBtnText="Create"
-      /> */}
-
       <RoomModal
         modalId="join-room-modal"
         title="Join Room"

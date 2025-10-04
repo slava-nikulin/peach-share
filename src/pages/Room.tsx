@@ -1,6 +1,8 @@
-import { useLocation, useNavigate, useParams } from '@solidjs/router'
+import { useLocation, useParams } from '@solidjs/router'
 import { createSignal, For, onCleanup, onMount, Show } from 'solid-js'
-import MetaPanel from '../components/MetaPanel'
+import MetaPanel from './room/components/MetaPanel'
+import { startRoomFlow } from './room/room-init'
+import type { Intent, RoomVM } from './room/types'
 
 type FileItem = {
   id: string
@@ -34,31 +36,28 @@ const files: FileItem[] = [
 
 // MetaPanel moved to src/components/MetaPanel.tsx
 export default function Room() {
-  // Предполагается, что эти сущности у вас выше
-  // const files: FileItem[] = ...
-  // const me: Peer = ...
-  // const others: Peer[] = ...
   const byOwner = (ownerId: string) =>
     files.filter((f) => f.ownerId === ownerId)
 
   const params = useParams<{ id: string }>()
   const location = useLocation<{
     secret?: string
-    intent?: 'create' | 'join'
+    intent?: Intent
   }>()
-  const navigate = useNavigate()
-  // mark as used (no-ops) so TS doesn't complain when these are referenced only in comments
-  void location
-  void navigate
-
-  // Этапы: RTDB connect, create/read room
   const [error, setError] = createSignal<string | null>(null)
-
-  // MetaPanel owns its internal signals now. We'll call its API via apiRef.
-  let metaApi: any = null
-
-  // helper to set api when mounted
-  const setMetaApi = (a: any | null) => (metaApi = a)
+  const [vmRef, setVmRef] = createSignal<RoomVM | undefined>(undefined)
+  onMount(() => {
+    const { actor, vm, stop } = startRoomFlow(
+      {
+        roomId: params.id,
+        intent: location.state?.intent ?? 'join',
+        secret: location.state?.secret,
+      },
+      setError
+    )
+    setVmRef(vm)
+    onCleanup(stop)
+  })
 
   // Guard и подписки (оставлено как есть — закомментировано вами)
   onMount(() => {
@@ -142,61 +141,60 @@ export default function Room() {
       //   }
       // }
     } catch (e: any) {
-      setError(e?.message ?? String(e))
+      // setError(e?.message ?? String(e))
       // setIsCreating(false) // эмуляция ниже таймерами
     }
 
-    const sleep = 3000
-    let curTimeout = 0
+    // const sleep = 1500
+    // let curTimeout = 0
 
-    curTimeout += sleep
-    const t0 = setTimeout(() => {
-      metaApi?.setConnecting(false)
-    }, curTimeout)
+    // curTimeout += sleep
+    // const t1 = setTimeout(() => {
+    //   metaApi?.setAuthed?.(true)
+    //   metaApi?.setAuthId?.('anon:DEMO-123456')
+    // }, curTimeout)
 
-    curTimeout += sleep
-    const t1 = setTimeout(() => {
-      metaApi?.setIsConnecting(false) // RTDB connected (still in Room)
-      metaApi?.setAuthed?.(true)
-      metaApi?.setAuthId?.('anon:DEMO-123456')
-    }, curTimeout)
+    // curTimeout += sleep
+    // const t2 = setTimeout(() => {
+    //   // Генерация демо-ключа для PAKE на основе секретa/room_id
+    //   const seed = location.state?.secret ?? `room:${params.id}`
+    //   metaApi?.setPakeKey?.(`pake-${btoa(seed).slice(0, 12)}`)
+    //   metaApi?.setRoomReady?.(true)
+    // }, curTimeout)
 
-    curTimeout += sleep
-    const t2 = setTimeout(() => {
-      // Генерация демо-ключа для PAKE на основе секретa/room_id
-      const seed = location.state?.secret ?? `room:${params.id}`
-      metaApi?.setPakeKey?.(`pake-${btoa(seed).slice(0, 12)}`)
-      metaApi?.setRoomReady?.(true)
-    }, curTimeout)
+    // curTimeout += sleep
+    // const t3 = setTimeout(() => {
+    //   metaApi?.setPakeReady?.(true)
+    //   // Демо SAS — визуальная проверка
+    //   metaApi?.setSas?.('🟣 ◻️ 🔶 ◼️')
+    // }, curTimeout)
 
-    curTimeout += sleep
-    const t3 = setTimeout(() => {
-      metaApi?.setPakeReady?.(true)
-      // Демо SAS — визуальная проверка
-      metaApi?.setSas?.('🟣 ◻️ 🔶 ◼️')
-    }, curTimeout)
+    // curTimeout += sleep
+    // const t4 = setTimeout(() => {
+    //   metaApi?.setRtcReady?.(true)
+    // }, curTimeout)
 
-    curTimeout += sleep
-    const t4 = setTimeout(() => {
-      metaApi?.setRtcReady?.(true)
-    }, curTimeout)
+    // curTimeout += sleep
+    // const t5 = setTimeout(() => {
+    //   metaApi?.setIsCleanupDone?.(true)
+    // }, curTimeout)
 
-    onCleanup(() => {
-      clearTimeout(t0)
-      clearTimeout(t1)
-      clearTimeout(t2)
-      clearTimeout(t3)
-      clearTimeout(t4)
-    })
+    // onCleanup(() => {
+    //   clearTimeout(t1)
+    //   clearTimeout(t2)
+    //   clearTimeout(t3)
+    //   clearTimeout(t4)
+    //   clearTimeout(t5)
+    // })
   })
 
   return (
     <div class="space-y-4">
       {/* МЕТА-ПАНЕЛЬ — видна сразу, основной контент ниже может быть скрыт скелетоном */}
-      <MetaPanel data={{ roomId: params.id }} apiRef={setMetaApi} />
+      <MetaPanel vmRef={vmRef()} />
 
       <Show
-        when={!metaApi?.getState().isRtcReady()}
+        when={vmRef()?.isRtcReady()}
         fallback={
           <div class="animate-pulse space-y-4">
             <div class="h-6 bg-gray-200 rounded w-1/3" />
