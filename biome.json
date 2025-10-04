@@ -1,0 +1,158 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.2.5/schema.json",
+
+  "root": true,
+
+  "files": {
+    "includes": ["**", "!dist", "!build", "!coverage", "!node_modules", "!.next", "!out"],
+    "ignoreUnknown": false,
+    "maxSize": 1048576
+  },
+
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineEnding": "lf",
+    "lineWidth": 100,
+    "bracketSpacing": true,
+    "attributePosition": "auto",
+    "expand": "auto",
+    "useEditorconfig": true
+  },
+
+  "javascript": {
+    "parser": {
+      "jsxEverywhere": true
+    },
+    "formatter": {
+      "quoteStyle": "single",
+      "jsxQuoteStyle": "double",
+      "quoteProperties": "asNeeded",
+      "trailingCommas": "all",
+      "semicolons": "always",
+      "arrowParentheses": "always",
+      "bracketSameLine": false,
+      "attributePosition": "auto",
+      "operatorLinebreak": "after",
+      "indentStyle": "space",
+      "indentWidth": 2,
+      "lineEnding": "lf",
+      "lineWidth": 100
+    },
+    "linter": {
+      "enabled": true
+    },
+    "assist": {
+      "enabled": true
+    }
+  },
+
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+
+      "a11y": "on",
+
+      "correctness": {
+        "noUndeclaredVariables": "error",
+        "noUndeclaredDependencies": "error",
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error",
+        "noInvalidUseBeforeDeclaration": "error",
+        "noUnreachable": "error",
+        "noVoidElementsWithChildren": "error",
+        "noSolidDestructuredProps": "error",
+        "useJsxKeyInIterable": "error",
+        "useValidTypeof": "error"
+      },
+
+      "suspicious": {
+        "noDebugger": "error",
+        "noDoubleEquals": "error",
+        "noThenProperty": "error",
+        "noDuplicateJsxProps": "error",
+        "noIrregularWhitespace": "warn",
+        "noTemplateCurlyInString": "warn",
+        "useGetterReturn": "error",
+        "noUnknownAtRules": "off"
+      },
+
+      "performance": {
+        "useSolidForComponent": "error",
+        "noAwaitInLoops": "warn",
+        "useTopLevelRegex": "warn"
+      },
+
+      "security": {
+        "noGlobalEval": "error",
+        "noBlankTarget": "error",
+        "noDangerouslySetInnerHtml": "error",
+        "noDangerouslySetInnerHtmlWithChildren": "error"
+      },
+
+      "style": {
+        "useImportType": "warn",
+        "useExportType": "warn",
+        "useSelfClosingElements": "warn",
+        "noDefaultExport": "warn"
+      },
+
+      "complexity": {
+        "noExcessiveCognitiveComplexity": "warn",
+        "noExcessiveLinesPerFunction": "warn",
+        "noUselessFragments": "info",
+        "noUselessTernary": "info",
+        "useOptionalChain": "warn"
+      },
+
+      "nursery": {
+        "useSortedClasses": "error",
+        "noImportCycles": "warn",
+        "noUnresolvedImports": "warn",
+        "noFloatingPromises": "warn",
+        "noMisusedPromises": "warn",
+        "noSecrets": "warn",
+        "useConsistentTypeDefinitions": "warn",
+        "useExplicitType": "warn",
+        "useExhaustiveSwitchCases": "warn"
+      }
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "includes": ["**", "!dist", "!build", "!coverage", "!node_modules", "!.next", "!out"],
+    "actions": {
+      "recommended": true
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["vite.config.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/pages/room/room-fsm.ts"],
+      "linter": {
+        "rules": {
+          "nursery": {
+            "noSecrets": "off"
+          }
+        }
+      }
+    }
+  ]
+}

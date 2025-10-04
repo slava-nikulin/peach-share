@@ -1,73 +1,73 @@
-import { assign, createMachine, fromPromise, sendTo, setup, type ActorRefFrom } from "xstate";
-import { delay } from "../../util/time";
-import type { Intent } from "./types";
+import { type ActorRefFrom, type AnyStateMachine, fromPromise, setup } from 'xstate';
+import { delay } from '../../util/time';
+import type { Intent } from './types';
 
-type Input = {
-  roomId: string
-  intent: Intent
-  secret?: string
+interface Input {
+  roomId: string;
+  intent: Intent;
+  secret?: string;
 }
 
 // События для view-model актора (простой редьюсер/transition)
 
-export const roomInitFSM = setup({
+export const roomInitFSM: AnyStateMachine = setup({
   types: {} as {
-    input: Input
-    context: Input
+    input: Input;
+    context: Input;
   },
   // Встроенные шаги — асинхронная логика инкапсулирована в акторах
   actors: {
     auth: fromPromise(async () => {
       await delay(2000);
-      console.log('auth')
-      const authId = "123"
-      return { authId }
+      console.log('auth');
+      const authId = '123';
+      return { authId };
     }),
-    createRoom: fromPromise(async ({ input }: { input: Input }) => {
-      console.log('create room')
+    createRoom: fromPromise(async () => {
+      console.log('create room');
       await delay(2000);
-      return { roomReady: true }
+      return { roomReady: true };
     }),
-    joinRoom: fromPromise(async ({ input }: { input: Input }) => {
-      console.log('join room')
+    joinRoom: fromPromise(async () => {
+      console.log('join room');
       await delay(2000);
-      return { roomReady: true }
+      return { roomReady: true };
     }),
-    pake: fromPromise(async ({ input }: { input: Input }) => {
-      console.log('pake key')
-      const key = "321"
+    pake: fromPromise(async () => {
+      console.log('pake key');
+      const key = '321';
       await delay(2000);
-      return { pakeKey: key, pakeReady: true }
+      return { pakeKey: key };
     }),
     sas: fromPromise(async () => {
-      console.log('pake session(sas)')
+      console.log('pake session(sas)');
       await delay(2000);
-      const sas = "sas"
-      return { sas }
+      const sas = 'sas';
+      return { sas };
     }),
     rtc: fromPromise(async () => {
-      console.log('rtc')
+      console.log('rtc');
       await delay(2000);
-      return { rtcReady: true }
+      return { rtcReady: true };
     }),
     cleanup: fromPromise(async () => {
-      console.log('cleanup')
+      console.log('cleanup');
       await delay(2000);
-      return { cleanupDone: true }
+      return { cleanupDone: true };
     }),
   },
   // Экшены объявляем, а реализацию подставим через provide с замыканием на vm
   actions: {
-    vmAuthDone: () => { },
-    vmRoomReady: () => { },
-    vmPakeDone: () => { },
-    vmSasDone: () => { },
-    vmRtcDone: () => { },
-    vmCleanupDone: () => { },
-    captureError: () => { }
+    vmAuthDone: () => {},
+    vmRoomReady: () => {},
+    vmPakeDone: () => {},
+    vmSasDone: () => {},
+    vmRtcDone: () => {},
+    vmCleanupDone: () => {},
+    captureError: () => {},
   },
 }).createMachine({
-  context: ({ input }) => input,
+  context: ({ input }: { input: Input }) => input,
   id: 'room-fsm',
   initial: 'auth',
   states: {
@@ -76,7 +76,7 @@ export const roomInitFSM = setup({
       invoke: {
         src: 'auth',
         onDone: { target: 'room', actions: 'vmAuthDone' },
-        onError: { target: '#room-fsm.failed', actions: 'captureError' }
+        onError: { target: '#room-fsm.failed', actions: 'captureError' },
       },
     },
     room: {
@@ -85,7 +85,10 @@ export const roomInitFSM = setup({
       states: {
         decide: {
           always: [
-            { guard: ({ context }) => context.intent === 'create', target: 'create' },
+            {
+              guard: ({ context }: { context: Input }) => context.intent === 'create',
+              target: 'create',
+            },
             { target: 'join' },
           ],
         },
@@ -93,18 +96,18 @@ export const roomInitFSM = setup({
           tags: ['creating'],
           invoke: {
             src: 'createRoom',
-            input: ({ context }) => context,
+            input: ({ context }: { context: Input }) => context,
             onDone: { target: 'done', actions: 'vmRoomReady' },
-            onError: { target: '#room-fsm.failed', actions: 'captureError' }
+            onError: { target: '#room-fsm.failed', actions: 'captureError' },
           },
         },
         join: {
           tags: ['joining'],
           invoke: {
             src: 'joinRoom',
-            input: ({ context }) => context,
+            input: ({ context }: { context: Input }) => context,
             onDone: { target: 'done', actions: 'vmRoomReady' },
-            onError: { target: '#room-fsm.failed', actions: 'captureError' }
+            onError: { target: '#room-fsm.failed', actions: 'captureError' },
           },
         },
         done: { type: 'final' },
@@ -115,9 +118,9 @@ export const roomInitFSM = setup({
       tags: ['pake'],
       invoke: {
         src: 'pake',
-        input: ({ context }) => context,
+        input: ({ context }: { context: Input }) => context,
         onDone: { target: 'sas', actions: 'vmPakeDone' },
-        onError: { target: '#room-fsm.failed', actions: 'captureError' }
+        onError: { target: '#room-fsm.failed', actions: 'captureError' },
       },
     },
     sas: {
@@ -125,7 +128,7 @@ export const roomInitFSM = setup({
       invoke: {
         src: 'sas',
         onDone: { target: 'rtc', actions: 'vmSasDone' },
-        onError: { target: '#room-fsm.failed', actions: 'captureError' }
+        onError: { target: '#room-fsm.failed', actions: 'captureError' },
       },
     },
     rtc: {
@@ -133,7 +136,7 @@ export const roomInitFSM = setup({
       invoke: {
         src: 'rtc',
         onDone: { target: 'cleanup', actions: 'vmRtcDone' },
-        onError: { target: '#room-fsm.failed', actions: 'captureError' }
+        onError: { target: '#room-fsm.failed', actions: 'captureError' },
       },
     },
     cleanup: {
@@ -141,7 +144,7 @@ export const roomInitFSM = setup({
       invoke: {
         src: 'cleanup',
         onDone: { target: 'done', actions: 'vmCleanupDone' },
-        onError: { target: '#room-fsm.failed', actions: 'captureError' }
+        onError: { target: '#room-fsm.failed', actions: 'captureError' },
       },
     },
     failed: {
@@ -149,6 +152,6 @@ export const roomInitFSM = setup({
     },
     done: { type: 'final' },
   },
-})
+});
 
-export type RoomInitActor = ActorRefFrom<typeof roomInitFSM>
+export type RoomInitActor = ActorRefFrom<typeof roomInitFSM>;

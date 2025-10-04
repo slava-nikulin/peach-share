@@ -1,13 +1,14 @@
-import { Route } from '@solidjs/router'
-import Home from '../pages/Home'
-import { lazy } from 'solid-js'
-const Room = lazy(() => import('../pages/Room'))
+import { Route } from '@solidjs/router';
+import { type Component, lazy } from 'solid-js';
+import { Home } from '../pages/Home';
 
-export function Routes() {
-  return (
-    <>
-      <Route path="/" component={Home} />
-      <Route path="/room/:id" component={Room} />
-    </>
-  )
-}
+const Room: Component = lazy(async () => {
+  const module = await import('../pages/Room');
+  return { default: module.Room };
+});
+export const Routes: Component = () => (
+  <>
+    <Route path="/" component={Home} />
+    <Route path="/room/:id" component={Room} />
+  </>
+);

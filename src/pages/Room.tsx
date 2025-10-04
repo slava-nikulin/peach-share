@@ -1,20 +1,24 @@
-import { useLocation, useParams } from '@solidjs/router'
-import { createSignal, For, onCleanup, onMount, Show } from 'solid-js'
-import MetaPanel from './room/components/MetaPanel'
-import { startRoomFlow } from './room/room-init'
-import type { Intent, RoomVM } from './room/types'
+import { useLocation, useParams } from '@solidjs/router';
+import { createSignal, For, type JSX, onCleanup, onMount, Show } from 'solid-js';
+import { MetaPanel } from './room/components/MetaPanel';
+import { startRoomFlow } from './room/room-init';
+import type { Intent, RoomVM } from './room/types';
 
-type FileItem = {
-  id: string
-  name: string
-  size: string
-  addedAt: string
-  ownerId: string
+interface FileItem {
+  id: string;
+  name: string;
+  size: string;
+  addedAt: string;
+  ownerId: string;
 }
-type Peer = { id: string; label: string; color: string }
+interface Peer {
+  id: string;
+  label: string;
+  color: string;
+}
 
-const me: Peer = { id: 'YOU-777', label: 'You', color: 'bg-orange-400' }
-const others: Peer[] = [{ id: 'B4M9-Z2', label: 'Anna', color: 'bg-rose-400' }]
+const me: Peer = { id: 'YOU-777', label: 'You', color: 'bg-orange-400' };
+const others: Peer[] = [{ id: 'B4M9-Z2', label: 'Anna', color: 'bg-rose-400' }];
 
 const files: FileItem[] = [
   // мои (shortened)
@@ -32,289 +36,189 @@ const files: FileItem[] = [
     addedAt: '10:22',
     ownerId: 'YOU-777',
   },
-]
+];
 
-// MetaPanel moved to src/components/MetaPanel.tsx
-export default function Room() {
-  const byOwner = (ownerId: string) =>
-    files.filter((f) => f.ownerId === ownerId)
+export function Room(): JSX.Element {
+  const byOwner = (ownerId: string): FileItem[] => files.filter((f) => f.ownerId === ownerId);
 
-  const params = useParams<{ id: string }>()
+  const params = useParams<{ id: string }>();
   const location = useLocation<{
-    secret?: string
-    intent?: Intent
-  }>()
-  const [error, setError] = createSignal<string | null>(null)
-  const [vmRef, setVmRef] = createSignal<RoomVM | undefined>(undefined)
+    secret?: string;
+    intent?: Intent;
+  }>();
+  const [error, setError] = createSignal<string | null>(null);
+  const [vmRef, setVmRef] = createSignal<RoomVM | undefined>(undefined);
   onMount(() => {
-    const { actor, vm, stop } = startRoomFlow(
+    const { vm, stop } = startRoomFlow(
       {
         roomId: params.id,
         intent: location.state?.intent ?? 'join',
         secret: location.state?.secret,
       },
-      setError
-    )
-    setVmRef(vm)
-    onCleanup(stop)
-  })
+      setError,
+    );
+    setVmRef(vm);
+    onCleanup(stop);
+  });
 
-  // Guard и подписки (оставлено как есть — закомментировано вами)
+  // Guard hook placeholder: reinstate when RTDB logic is restored.
   onMount(() => {
-    // const s =
-    //   location.state?.secret ??
-    //   sessionStorage.getItem(`room_secret:${params.id}`)
-    // if (!s) {
-    //   navigate('/', { replace: true })
-    //   return
-    // }
-    // setSecret(s)
-    // sessionStorage.setItem(`room_secret:${params.id}`, s)
-    // const navIntent =
-    //   location.state?.intent ??
-    //   (sessionStorage.getItem(`room_intent:${params.id}`) as
-    //     | 'create'
-    //     | 'join'
-    //     | null)
-    // if (navIntent) {
-    //   sessionStorage.setItem(`room_intent:${params.id}`, navIntent)
-    // }
-    // // Подписка на /.info/connected => true когда клиент подключён к RTDB
-    // const unsub = rtdbConnectedSubscribe(db, (connected) =>
-    //   setIsConnecting(!connected)
-    // )
-    // onCleanup(unsub)
-  })
+    /* noop */
+  });
 
   // Основной поток (оставлен ваш комментарий; реальная логика пока отключена)
-  onMount(async () => {
-    try {
-      // // 1) Анонимная аутентификация (для прохождения правил на чтение/запись)
-      // const uid = await ensureAnon()
-      // // 2) Подключение к RTDB
-      // await waitConnected()
-      // // 3) Ветвление по intent
-      // const intent =
-      //   location.state?.intent ??
-      //   (sessionStorage.getItem(`room_intent:${params.id}`) as
-      //     | 'create'
-      //     | 'join'
-      //     | null) ??
-      //   'join'
-      // const roomRef = ref(db, `rooms/${params.id}`)
-      // if (intent === 'create') {
-      //   const now = Date.now()
-      //   const payload: RoomRecord = {
-      //     room_id: params.id,
-      //     owner: uid,
-      //     created_at: now,
-      //     updated_at: now,
-      //   }
-      //   // Создать запись только если её ещё нет (атомарно)
-      //   await runTransaction(
-      //     roomRef,
-      //     (cur: RoomRecord | null) => cur ?? payload
-      //   )
-      //   setIsCreating(false)
-      // } else if (intent === 'join') {
-      //   const snap = await get(roomRef)
-      //   if (snap.exists()) {
-      //     setIsCreating(false)
-      //   } else {
-      //     let off: () => void
-      //     await new Promise<void>((resolve, reject) => {
-      //       off = onValue(
-      //         roomRef,
-      //         (s) => {
-      //           if (s.exists()) {
-      //             off()
-      //             resolve()
-      //           }
-      //         },
-      //         (e) => {
-      //           off()
-      //           reject(e)
-      //         }
-      //       )
-      //     })
-      //     setIsCreating(false)
-      //   }
-      // }
-    } catch (e: any) {
-      // setError(e?.message ?? String(e))
-      // setIsCreating(false) // эмуляция ниже таймерами
-    }
+  onMount(() => {
+    const run = async (): Promise<void> => {
+      try {
+        /*
+         * Planned flow (kept for future implementation):
+         * 1) ensureAnon() and waitConnected() for RTDB access.
+         * 2) Branch on intent to create or join the room, guarding against duplicates.
+         * 3) Subscribe to RTDB until the room materialises for join scenarios.
+         */
+      } catch (_error: unknown) {
+        // setError(e?.message ?? String(e))
+        // setIsCreating(false) // эмуляция ниже таймерами
+      }
 
-    // const sleep = 1500
-    // let curTimeout = 0
+      /* Demo timers kept for reference — re-enable when simulating the handshake UI flow. */
+    };
 
-    // curTimeout += sleep
-    // const t1 = setTimeout(() => {
-    //   metaApi?.setAuthed?.(true)
-    //   metaApi?.setAuthId?.('anon:DEMO-123456')
-    // }, curTimeout)
+    void run();
+  });
 
-    // curTimeout += sleep
-    // const t2 = setTimeout(() => {
-    //   // Генерация демо-ключа для PAKE на основе секретa/room_id
-    //   const seed = location.state?.secret ?? `room:${params.id}`
-    //   metaApi?.setPakeKey?.(`pake-${btoa(seed).slice(0, 12)}`)
-    //   metaApi?.setRoomReady?.(true)
-    // }, curTimeout)
+  return <RoomLayout error={error} vmRef={vmRef} byOwner={byOwner} />;
+}
 
-    // curTimeout += sleep
-    // const t3 = setTimeout(() => {
-    //   metaApi?.setPakeReady?.(true)
-    //   // Демо SAS — визуальная проверка
-    //   metaApi?.setSas?.('🟣 ◻️ 🔶 ◼️')
-    // }, curTimeout)
+interface RoomLayoutProps {
+  error: () => string | null;
+  vmRef: () => RoomVM | undefined;
+  byOwner: (ownerId: string) => FileItem[];
+}
 
-    // curTimeout += sleep
-    // const t4 = setTimeout(() => {
-    //   metaApi?.setRtcReady?.(true)
-    // }, curTimeout)
-
-    // curTimeout += sleep
-    // const t5 = setTimeout(() => {
-    //   metaApi?.setIsCleanupDone?.(true)
-    // }, curTimeout)
-
-    // onCleanup(() => {
-    //   clearTimeout(t1)
-    //   clearTimeout(t2)
-    //   clearTimeout(t3)
-    //   clearTimeout(t4)
-    //   clearTimeout(t5)
-    // })
-  })
-
+function RoomLayout(props: RoomLayoutProps): JSX.Element {
   return (
     <div class="space-y-4">
-      {/* МЕТА-ПАНЕЛЬ — видна сразу, основной контент ниже может быть скрыт скелетоном */}
-      <MetaPanel vmRef={vmRef()} />
-
-      <Show
-        when={vmRef()?.isRtcReady()}
-        fallback={
-          <div class="animate-pulse space-y-4">
-            <div class="h-6 bg-gray-200 rounded w-1/3" />
-            <div class="h-4 bg-gray-200 rounded w-2/3" />
-            <div class="h-48 bg-gray-200 rounded" />
-          </div>
-        }
-      >
-        <Show
-          when={!error()}
-          fallback={<div class="text-red-600">{error()}</div>}
-        >
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Dropzone 1/3 */}
-            <div class="rounded-2xl border border-white/70 bg-white/70 shadow-sm p-4">
-              <div class="flex items-center justify-center w-full">
-                <label
-                  for="dropzone-file"
-                  class="flex flex-col items-center justify-center w-full h-44 md:h-56 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100"
-                >
-                  <div class="flex flex-col items-center justify-center pt-5 pb-6 text-center">
-                    <svg
-                      class="w-7 h-7 mb-2 text-gray-500"
-                      viewBox="0 0 20 16"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <path
-                        stroke="currentColor"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"
-                      />
-                    </svg>
-                    <p class="text-sm text-gray-600">
-                      <span class="font-medium">Кликните</span> или перетащите
-                      файлы
-                    </p>
-                    <p class="text-xs text-gray-500">
-                      Шэр через комнату. На сервер не грузим
-                    </p>
-                  </div>
-                  <input
-                    id="dropzone-file"
-                    type="file"
-                    class="hidden"
-                    multiple
-                  />
-                </label>
-              </div>
-            </div>
-
-            {/* Мой список 2/3 */}
-            <div class="md:col-span-2 rounded-2xl border border-white/70 bg-white/70 shadow-sm flex flex-col">
-              <PeerHeader peer={me} count={byOwner(me.id).length} you />
-              <FileList files={byOwner(me.id)} mode="owner" />
-            </div>
-          </div>
-
-          {/* Строки 2–4: остальные */}
-          <For each={others.slice(0, 3)}>
-            {(p) => (
-              <div class="rounded-2xl border border-white/70 bg-white/70 shadow-sm flex flex-col">
-                <PeerHeader peer={p} count={byOwner(p.id).length} />
-                <FileList files={byOwner(p.id)} mode="guest" />
-              </div>
-            )}
-          </For>
+      <MetaPanel vmRef={props.vmRef()} />
+      <Show when={props.vmRef()?.isRtcReady()} fallback={<RtcSkeleton />}>
+        <Show when={!props.error()} fallback={<div class="text-red-600">{props.error()}</div>}>
+          <PeersGrid byOwner={props.byOwner} />
         </Show>
       </Show>
     </div>
-  )
+  );
 }
 
-function PeerHeader(props: { peer: Peer; count: number; you?: boolean }) {
+const RtcSkeleton = (): JSX.Element => (
+  <div class="animate-pulse space-y-4">
+    <div class="h-6 w-1/3 rounded bg-gray-200" />
+    <div class="h-4 w-2/3 rounded bg-gray-200" />
+    <div class="h-48 rounded bg-gray-200" />
+  </div>
+);
+
+interface PeersGridProps {
+  byOwner: (ownerId: string) => FileItem[];
+}
+
+const PeersGrid = (props: PeersGridProps): JSX.Element => (
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+    <DropzoneCard />
+    <OwnerCard files={props.byOwner(me.id)} />
+    <For each={others.slice(0, 3)}>
+      {(peer: Peer): JSX.Element => (
+        <div class="flex flex-col rounded-2xl border border-white/70 bg-white/70 shadow-sm">
+          <PeerHeader peer={peer} count={props.byOwner(peer.id).length} />
+          <FileList files={props.byOwner(peer.id)} mode="guest" />
+        </div>
+      )}
+    </For>
+  </div>
+);
+
+const DropzoneCard = (): JSX.Element => (
+  <div class="rounded-2xl border border-white/70 bg-white/70 p-4 shadow-sm">
+    <div class="flex w-full items-center justify-center">
+      <label
+        for="dropzone-file"
+        class="flex h-44 w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-gray-300 border-dashed bg-gray-50 hover:bg-gray-100 md:h-56"
+      >
+        <div class="flex flex-col items-center justify-center pt-5 pb-6 text-center">
+          <svg
+            class="mb-2 h-7 w-7 text-gray-500"
+            viewBox="0 0 20 16"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"
+            />
+          </svg>
+          <p class="text-gray-600 text-sm">
+            <span class="font-medium">Кликните</span> или перетащите файлы
+          </p>
+          <p class="text-gray-500 text-xs">Шэр через комнату. На сервер не грузим</p>
+        </div>
+        <input id="dropzone-file" type="file" class="hidden" multiple />
+      </label>
+    </div>
+  </div>
+);
+
+const OwnerCard = (props: { files: FileItem[] }): JSX.Element => (
+  <div class="flex flex-col rounded-2xl border border-white/70 bg-white/70 shadow-sm md:col-span-2">
+    <PeerHeader peer={me} count={props.files.length} you />
+    <FileList files={props.files} mode="owner" />
+  </div>
+);
+
+function PeerHeader(props: { peer: Peer; count: number; you?: boolean }): JSX.Element {
   return (
-    <div class="flex items-center justify-between px-4 py-2 border-b border-gray-200">
-      <div class="flex items-center gap-2 min-w-0">
-        <span
-          class={`h-2.5 w-2.5 rounded-full ${props.peer.color} border border-white shrink-0`}
-        />
-        <span class="text-sm font-medium truncate">
+    <div class="flex items-center justify-between border-gray-200 border-b px-4 py-2">
+      <div class="flex min-w-0 items-center gap-2">
+        <span class={`h-2.5 w-2.5 rounded-full ${props.peer.color} shrink-0 border border-white`} />
+        <span class="truncate font-medium text-sm">
           {props.peer.label}
           {props.you ? ' (вы)' : ''} ·{' '}
           <span class="text-[11px] text-slate-500">{props.peer.id}</span>
         </span>
       </div>
-      <span class="text-[11px] px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 border border-orange-200">
+      <span class="rounded-full border border-orange-200 bg-orange-100 px-2 py-0.5 text-[11px] text-orange-800">
         {props.count}
       </span>
     </div>
-  )
+  );
 }
 
-function FileList(props: { files: FileItem[]; mode: 'owner' | 'guest' }) {
+function FileList(props: { files: FileItem[]; mode: 'owner' | 'guest' }): JSX.Element {
   return (
     <div class="p-2">
-      <div class="max-h-56 overflow-y-auto space-y-1.5">
+      <div class="max-h-56 space-y-1.5 overflow-y-auto">
         <For each={props.files}>
-          {(f) => (
+          {(file: FileItem) => (
             <div class="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 hover:bg-gray-50">
               {/* имя слева, мета справа на одной строке */}
-              <div class="min-w-0 flex-1 flex items-center gap-2">
-                <p class="truncate text-sm text-slate-800">{f.name}</p>
+              <div class="flex min-w-0 flex-1 items-center gap-2">
+                <p class="truncate text-slate-800 text-sm">{file.name}</p>
                 <span class="shrink-0 text-[11px] text-slate-500">
-                  {f.size} · {f.addedAt}
+                  {file.size} · {file.addedAt}
                 </span>
               </div>
               {props.mode === 'owner' ? (
                 <button
                   type="button"
-                  class="text-[11px] px-2 py-1 rounded border border-rose-200 text-rose-700 hover:bg-rose-50"
+                  class="rounded border border-rose-200 px-2 py-1 text-[11px] text-rose-700 hover:bg-rose-50"
                 >
                   Удалить
                 </button>
               ) : (
                 <button
                   type="button"
-                  class="text-[11px] px-2 py-1 rounded border border-slate-200 hover:bg-slate-50"
+                  class="rounded border border-slate-200 px-2 py-1 text-[11px] hover:bg-slate-50"
                 >
                   Скачать
                 </button>
@@ -324,11 +228,11 @@ function FileList(props: { files: FileItem[]; mode: 'owner' | 'guest' }) {
         </For>
 
         {props.files.length === 0 && (
-          <div class="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-6 text-center text-sm text-slate-500">
+          <div class="rounded-lg border border-gray-300 border-dashed bg-gray-50 px-3 py-6 text-center text-slate-500 text-sm">
             Нет файлов
           </div>
         )}
       </div>
     </div>
-  )
+  );
 }
