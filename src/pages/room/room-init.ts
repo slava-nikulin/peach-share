@@ -9,12 +9,12 @@ interface StartRoomFlowResult {
 }
 
 export function startRoomFlow(
-  input: { roomId: string; intent: Intent; secret?: string },
+  input: { intent: Intent; secret: string },
   setError?: (msg: string | null) => void,
 ): StartRoomFlowResult {
   const vm = createRoomVM();
 
-  vm.setRoomId(input.roomId);
+  vm.setSecret(input.secret);
 
   const machineWithVM = roomInitFSM.provide({
     actions: {

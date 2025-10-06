@@ -2,7 +2,7 @@ import { useNavigate } from '@solidjs/router';
 import { type Component, onCleanup, onMount } from 'solid-js';
 import { useNavActions } from '../components/nav-actions';
 import { RoomModal, type RoomModalHandle } from '../components/RoomModal';
-import { genSecret32, hkdfPathId, secretToBase64Url } from '../lib/crypto';
+import { fromBase64Url, genSecret32, hkdfPathId, toBase64Url } from '../lib/crypto';
 
 export const Home: Component = () => {
   const { setNavActions: setActions } = useNavActions();
@@ -11,7 +11,7 @@ export const Home: Component = () => {
   const createRoom = async (): Promise<void> => {
     const secret = genSecret32();
     const pathId = await hkdfPathId(secret, 'path', 128);
-    const secretB64 = secretToBase64Url(secret);
+    const secretB64 = toBase64Url(secret);
     navigate(`/room/${pathId}`, {
       state: { secret: secretB64, intent: 'create' },
     });
@@ -41,8 +41,13 @@ export const Home: Component = () => {
 
   let joinRoomModal: RoomModalHandle | undefined;
 
-  const handleJoinRoomForm = (roomCode: string): void => {
-    console.log('Join room:', roomCode);
+  const handleJoinRoomForm = async (secretB64: string): Promise<void> => {
+    const secret = fromBase64Url(secretB64);
+    const pathId = await hkdfPathId(secret, 'path', 128);
+
+    navigate(`/room/${pathId}`, {
+      state: { secret: secretB64, intent: 'create' },
+    });
   };
 
   const handleJoinButtonClick = (): void => {

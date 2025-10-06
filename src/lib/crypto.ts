@@ -36,12 +36,18 @@ export async function hkdfPathId(
 }
 
 export function toBase64Url(bytes: Uint8Array): string {
-  // компактное base64url без '='
-  let b64 = btoa(String.fromCharCode(...bytes));
-  b64 = b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-  return b64;
+  const binaryString = Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
+  const b64 = btoa(binaryString);
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
-export function secretToBase64Url(secret: Uint8Array): string {
-  return toBase64Url(secret);
+export function fromBase64Url(base64Url: string): Uint8Array {
+  const standardBase64 = base64Url
+    .replace(/-/g, '+')
+    .replace(/_/g, '/')
+    .padEnd(base64Url.length + ((4 - (base64Url.length % 4)) % 4), '=');
+
+  const binaryString = atob(standardBase64);
+
+  return Uint8Array.from(binaryString, (c) => c.charCodeAt(0));
 }

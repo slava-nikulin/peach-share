@@ -1,4 +1,4 @@
-import { useLocation, useParams } from '@solidjs/router';
+import { useLocation } from '@solidjs/router';
 import { createSignal, For, type JSX, onCleanup, onMount, Show } from 'solid-js';
 import { MetaPanel } from './room/components/MetaPanel';
 import { startRoomFlow } from './room/room-init';
@@ -18,73 +18,30 @@ interface Peer {
 }
 
 const me: Peer = { id: 'YOU-777', label: 'You', color: 'bg-orange-400' };
-const others: Peer[] = [{ id: 'B4M9-Z2', label: 'Anna', color: 'bg-rose-400' }];
+const guest: Peer = { id: 'B4M9-Z2', label: 'Anna', color: 'bg-rose-400' };
 
 const files: FileItem[] = [
-  // мои (shortened)
-  {
-    id: 'f1',
-    name: 'report_Q3.pdf',
-    size: '2.3 MB',
-    addedAt: '10:21',
-    ownerId: 'YOU-777',
-  },
-  {
-    id: 'f2',
-    name: 'family.jpg',
-    size: '1.1 MB',
-    addedAt: '10:22',
-    ownerId: 'YOU-777',
-  },
+  { id: 'f1', name: 'report_Q3.pdf', size: '2.3 MB', addedAt: '10:21', ownerId: 'YOU-777' },
+  { id: 'f2', name: 'family.jpg', size: '1.1 MB', addedAt: '10:22', ownerId: 'YOU-777' },
 ];
 
 export function Room(): JSX.Element {
   const byOwner = (ownerId: string): FileItem[] => files.filter((f) => f.ownerId === ownerId);
 
-  const params = useParams<{ id: string }>();
-  const location = useLocation<{
-    secret?: string;
-    intent?: Intent;
-  }>();
+  const location = useLocation<{ secret?: string; intent?: Intent }>();
   const [error, setError] = createSignal<string | null>(null);
   const [vmRef, setVmRef] = createSignal<RoomVM | undefined>(undefined);
+
   onMount(() => {
     const { vm, stop } = startRoomFlow(
       {
-        roomId: params.id,
         intent: location.state?.intent ?? 'join',
-        secret: location.state?.secret,
+        secret: location.state?.secret ?? '',
       },
       setError,
     );
     setVmRef(vm);
     onCleanup(stop);
-  });
-
-  // Guard hook placeholder: reinstate when RTDB logic is restored.
-  onMount(() => {
-    /* noop */
-  });
-
-  // Основной поток (оставлен ваш комментарий; реальная логика пока отключена)
-  onMount(() => {
-    const run = async (): Promise<void> => {
-      try {
-        /*
-         * Planned flow (kept for future implementation):
-         * 1) ensureAnon() and waitConnected() for RTDB access.
-         * 2) Branch on intent to create or join the room, guarding against duplicates.
-         * 3) Subscribe to RTDB until the room materialises for join scenarios.
-         */
-      } catch (_error: unknown) {
-        // setError(e?.message ?? String(e))
-        // setIsCreating(false) // эмуляция ниже таймерами
-      }
-
-      /* Demo timers kept for reference — re-enable when simulating the handshake UI flow. */
-    };
-
-    void run();
   });
 
   return <RoomLayout error={error} vmRef={vmRef} byOwner={byOwner} />;
@@ -100,9 +57,10 @@ function RoomLayout(props: RoomLayoutProps): JSX.Element {
   return (
     <div class="space-y-4">
       <MetaPanel vmRef={props.vmRef()} />
-      <Show when={props.vmRef()?.isRtcReady()} fallback={<RtcSkeleton />}>
+      <Show when={!props.error() && props.vmRef()?.isRtcReady()} fallback={<RtcSkeleton />}>
         <Show when={!props.error()} fallback={<div class="text-red-600">{props.error()}</div>}>
-          <PeersGrid byOwner={props.byOwner} />
+          <RoomOwner files={props.byOwner(me.id)} />
+          {guest && <RoomGuest peer={guest} byOwner={props.byOwner} />}
         </Show>
       </Show>
     </div>
@@ -114,25 +72,6 @@ const RtcSkeleton = (): JSX.Element => (
     <div class="h-6 w-1/3 rounded bg-gray-200" />
     <div class="h-4 w-2/3 rounded bg-gray-200" />
     <div class="h-48 rounded bg-gray-200" />
-  </div>
-);
-
-interface PeersGridProps {
-  byOwner: (ownerId: string) => FileItem[];
-}
-
-const PeersGrid = (props: PeersGridProps): JSX.Element => (
-  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-    <DropzoneCard />
-    <OwnerCard files={props.byOwner(me.id)} />
-    <For each={others.slice(0, 3)}>
-      {(peer: Peer): JSX.Element => (
-        <div class="flex flex-col rounded-2xl border border-white/70 bg-white/70 shadow-sm">
-          <PeerHeader peer={peer} count={props.byOwner(peer.id).length} />
-          <FileList files={props.byOwner(peer.id)} mode="guest" />
-        </div>
-      )}
-    </For>
   </div>
 );
 
@@ -169,13 +108,6 @@ const DropzoneCard = (): JSX.Element => (
   </div>
 );
 
-const OwnerCard = (props: { files: FileItem[] }): JSX.Element => (
-  <div class="flex flex-col rounded-2xl border border-white/70 bg-white/70 shadow-sm md:col-span-2">
-    <PeerHeader peer={me} count={props.files.length} you />
-    <FileList files={props.files} mode="owner" />
-  </div>
-);
-
 function PeerHeader(props: { peer: Peer; count: number; you?: boolean }): JSX.Element {
   return (
     <div class="flex items-center justify-between border-gray-200 border-b px-4 py-2">
@@ -201,7 +133,6 @@ function FileList(props: { files: FileItem[]; mode: 'owner' | 'guest' }): JSX.El
         <For each={props.files}>
           {(file: FileItem) => (
             <div class="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 hover:bg-gray-50">
-              {/* имя слева, мета справа на одной строке */}
               <div class="flex min-w-0 flex-1 items-center gap-2">
                 <p class="truncate text-slate-800 text-sm">{file.name}</p>
                 <span class="shrink-0 text-[11px] text-slate-500">
@@ -233,6 +164,32 @@ function FileList(props: { files: FileItem[]; mode: 'owner' | 'guest' }): JSX.El
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** ====== Новые компоненты под 2 участников ====== */
+
+function RoomOwner(props: { files: FileItem[] }): JSX.Element {
+  return (
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+      {/* Dropzone слева */}
+      <DropzoneCard />
+      {/* Карточка владельца на 2 колонки */}
+      <div class="flex flex-col rounded-2xl border border-white/70 bg-white/70 shadow-sm md:col-span-2">
+        <PeerHeader peer={me} count={props.files.length} you />
+        <FileList files={props.files} mode="owner" />
+      </div>
+    </div>
+  );
+}
+
+function RoomGuest(props: { peer: Peer; byOwner: (ownerId: string) => FileItem[] }): JSX.Element {
+  const files = (): FileItem[] => props.byOwner(props.peer.id);
+  return (
+    <div class="flex flex-col rounded-2xl border border-white/70 bg-white/70 shadow-sm">
+      <PeerHeader peer={props.peer} count={files().length} />
+      <FileList files={files()} mode="guest" />
     </div>
   );
 }

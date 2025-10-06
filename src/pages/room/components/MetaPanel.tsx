@@ -11,58 +11,56 @@ function SkeletonBar(props: { width?: string }): JSX.Element {
 
 export function MetaPanel(props: { vmRef?: RoomVM }): JSX.Element {
   const [isPanelOpen, setPanelOpen] = createSignal(true);
-  const [isPakeKeyVisible, setPakeKeyVisible] = createSignal(false);
-  const [copied, setCopied] = createSignal(false);
+  const [isSecretVisible, setSecretVisible] = createSignal(false);
+  const [isSecredCopied, setSecretCopied] = createSignal(false);
 
   const togglePanel = (): boolean => setPanelOpen(!isPanelOpen());
-  const togglePakeKey = (): boolean => setPakeKeyVisible(!isPakeKeyVisible());
+  const toggleSecretVisibility = (): boolean => setSecretVisible(!isSecretVisible());
 
-  const handleCopy = async (): Promise<void> => {
-    const key = props.vmRef?.pakeKey();
+  const handleSecretCopy = async (): Promise<void> => {
+    const key = props.vmRef?.secret();
     if (!key) return;
     await navigator.clipboard.writeText(key);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1000);
+    setSecretCopied(true);
+    window.setTimeout(() => setSecretCopied(false), 1000);
   };
 
   return (
     <PanelContainer
-      isOpen={isPanelOpen()}
-      onToggle={togglePanel}
+      isPanelOpen={isPanelOpen()}
+      onPanelToggle={togglePanel}
       vmRef={props.vmRef}
-      isPakeKeyVisible={isPakeKeyVisible()}
-      togglePakeKey={togglePakeKey}
-      copied={copied()}
-      onCopy={handleCopy}
+      isSecretVisible={isSecretVisible()}
+      toggleSecretVisibility={toggleSecretVisibility}
+      isSecretCopied={isSecredCopied()}
+      onCopySecret={handleSecretCopy}
     />
   );
 }
 
 interface PanelContainerProps {
-  isOpen: boolean;
-  onToggle: () => void;
   vmRef?: RoomVM;
-  isPakeKeyVisible: boolean;
-  togglePakeKey: () => void;
-  copied: boolean;
-  onCopy: () => Promise<void>;
+  isPanelOpen: boolean;
+  onPanelToggle: () => void;
+  isSecretVisible: boolean;
+  isSecretCopied: boolean;
+  toggleSecretVisibility: () => void;
+  onCopySecret: () => Promise<void>;
 }
 
 const PanelContainer = (props: PanelContainerProps): JSX.Element => {
-  const buttonLabel = props.isOpen ? 'Скрыть' : 'Показать';
-  const buttonTitle = props.isOpen ? 'Скрыть панель' : 'Показать панель';
-  const chevron = props.isOpen ? 'M5 12l5-5 5 5' : 'M5 8l5 5 5-5';
+  const buttonLabel = props.isPanelOpen ? 'Show' : 'Hide';
+  const chevron = props.isPanelOpen ? 'M5 12l5-5 5 5' : 'M5 8l5 5 5-5';
 
   return (
     <div class="rounded-2xl border border-white/70 bg-white/80 shadow-sm backdrop-blur">
       <div class="flex items-center justify-between border-gray-200 border-b px-4 py-2">
-        <div class="font-semibold text-sm tracking-wide">Мета комнаты</div>
+        <div class="font-semibold text-sm tracking-wide">Room info</div>
         <button
           type="button"
           class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs hover:cursor-pointer hover:bg-gray-100"
-          title={buttonTitle}
-          aria-expanded={props.isOpen}
-          onClick={props.onToggle}
+          aria-expanded={props.isPanelOpen}
+          onClick={props.onPanelToggle}
         >
           <span>{buttonLabel}</span>
           <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -76,59 +74,60 @@ const PanelContainer = (props: PanelContainerProps): JSX.Element => {
           </svg>
         </button>
       </div>
-      <div class={`px-4 py-3 ${props.isOpen ? '' : 'hidden'}`}>
+      <div class={`px-4 py-3 ${props.isPanelOpen ? '' : 'hidden'}`}>
         <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <div class="grid grid-cols-[140px_minmax(0,1fr)] items-center gap-x-4 gap-y-3">
-            <MetaLabel>Room ID</MetaLabel>
-            <div class="font-mono text-sm">
-              <span class="rounded border border-slate-200 bg-slate-100 px-2 py-0.5">
-                {props.vmRef?.roomId()}
-              </span>
+          <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-y-3 md:grid-cols-[140px_minmax(0,1fr)]">
+            <MetaLabel>Secret</MetaLabel>
+            <div class="flex items-center gap-2">
+              <input
+                name="secret"
+                type={props.isSecretVisible ? 'text' : 'password'}
+                value={props.vmRef?.secret() ?? ''}
+                readonly
+                class="min-w-[1ch] max-w-xs flex-1 basis-0 rounded border border-slate-300 bg-white px-2 py-1 text-sm"
+              />
+              <div class="shrink-0">
+                <SecretKeyActions
+                  isVisible={props.isSecretVisible}
+                  toggleVisibility={props.toggleSecretVisibility}
+                  copied={props.isSecretCopied}
+                  onCopy={props.onCopySecret}
+                />
+              </div>
             </div>
 
-            <MetaLabel>PAKE key</MetaLabel>
+            <MetaLabel>PAKE session</MetaLabel>
             <div>
               <Show
                 when={(props.vmRef?.pakeKey()?.length ?? 0) > 0}
                 fallback={<SkeletonBar width="w-56" />}
               >
-                <div class="flex items-center gap-2">
-                  <input
-                    name="pakeKey"
-                    type={props.isPakeKeyVisible ? 'text' : 'password'}
-                    value={props.vmRef?.pakeKey() ?? ''}
-                    readonly
-                    class="max-w-xs rounded border border-slate-300 bg-white px-2 py-1 text-sm"
-                  />
-                  <PakeKeyActions
-                    isVisible={props.isPakeKeyVisible}
-                    toggleVisibility={props.togglePakeKey}
-                    copied={props.copied}
-                    onCopy={props.onCopy}
-                  />
-                </div>
+                <span class="me-2 rounded-sm bg-green-100 px-2.5 py-0.5 font-medium text-green-800 text-xs dark:bg-green-900 dark:text-green-300">
+                  established
+                </span>
               </Show>
             </div>
 
             <MetaLabel>WebRTC</MetaLabel>
             <div>
               <Show when={props.vmRef?.isRtcReady()} fallback={<SkeletonBar width="w-20" />}>
-                <span class="inline-flex items-center gap-2 text-sm">
-                  <span class="h-2.5 w-2.5 rounded-full border border-white bg-emerald-500" />
-                  Connected
+                <span class="me-2 rounded-sm bg-green-100 px-2.5 py-0.5 font-medium text-green-800 text-xs dark:bg-green-900 dark:text-green-300">
+                  connected
                 </span>
               </Show>
             </div>
           </div>
 
-          <div class="grid grid-cols-[140px_minmax(0,1fr)] items-center gap-x-4 gap-y-3">
+          <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-x-4 gap-y-3 md:grid-cols-[140px_minmax(0,1fr)]">
             <MetaLabel>Auth</MetaLabel>
             <div>
               <Show
                 when={(props.vmRef?.authId()?.length ?? 0) > 0}
                 fallback={<SkeletonBar width="w-40" />}
               >
-                <code class="break-all text-sm">{props.vmRef?.authId()}</code>
+                <span class="me-2 rounded-sm bg-gray-100 px-2.5 py-0.5 font-medium text-gray-800 text-xs dark:bg-gray-700 dark:text-gray-300">
+                  {props.vmRef?.authId()}
+                </span>
               </Show>
             </div>
 
@@ -145,7 +144,9 @@ const PanelContainer = (props: PanelContainerProps): JSX.Element => {
             <MetaLabel>Cleanup</MetaLabel>
             <div>
               <Show when={props.vmRef?.isCleanupDone()} fallback={<SkeletonBar width="w-20" />}>
-                <span class="inline-flex items-center gap-2 text-sm">✅</span>
+                <span class="me-2 rounded-sm bg-green-100 px-2.5 py-0.5 font-medium text-green-800 text-xs dark:bg-green-900 dark:text-green-300">
+                  done
+                </span>
               </Show>
             </div>
           </div>
@@ -155,14 +156,14 @@ const PanelContainer = (props: PanelContainerProps): JSX.Element => {
   );
 };
 
-interface PakeKeyActionsProps {
+interface SecretKeyActionsProps {
   isVisible: boolean;
   toggleVisibility: () => void;
   copied: boolean;
   onCopy: () => Promise<void>;
 }
 
-const PakeKeyActions = (props: PakeKeyActionsProps): JSX.Element => (
+const SecretKeyActions = (props: SecretKeyActionsProps): JSX.Element => (
   <div class="inline-flex overflow-hidden rounded-lg border border-slate-200">
     <button
       type="button"
