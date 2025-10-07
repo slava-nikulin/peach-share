@@ -9,7 +9,7 @@ interface StartRoomFlowResult {
 }
 
 export function startRoomFlow(
-  input: { intent: Intent; secret: string },
+  input: { roomId: string; intent: Intent; secret: string },
   setError?: (msg: string | null) => void,
 ): StartRoomFlowResult {
   const vm = createRoomVM();

@@ -1,4 +1,4 @@
-import { useLocation } from '@solidjs/router';
+import { useLocation, useParams } from '@solidjs/router';
 import { createSignal, For, type JSX, onCleanup, onMount, Show } from 'solid-js';
 import { MetaPanel } from './room/components/MetaPanel';
 import { startRoomFlow } from './room/room-init';
@@ -28,6 +28,7 @@ const files: FileItem[] = [
 export function Room(): JSX.Element {
   const byOwner = (ownerId: string): FileItem[] => files.filter((f) => f.ownerId === ownerId);
 
+  const params = useParams<{ id: string }>();
   const location = useLocation<{ secret?: string; intent?: Intent }>();
   const [error, setError] = createSignal<string | null>(null);
   const [vmRef, setVmRef] = createSignal<RoomVM | undefined>(undefined);
@@ -35,6 +36,7 @@ export function Room(): JSX.Element {
   onMount(() => {
     const { vm, stop } = startRoomFlow(
       {
+        roomId: params.id,
         intent: location.state?.intent ?? 'join',
         secret: location.state?.secret ?? '',
       },

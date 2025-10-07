@@ -1,31 +1,44 @@
-import { type ActorRefFrom, type AnyStateMachine, fromPromise, setup } from 'xstate';
+import {
+  type ActorRefFrom,
+  type AnyEventObject,
+  type AnyStateMachine,
+  assign,
+  type DoneActorEvent,
+  fromPromise,
+  setup,
+} from 'xstate';
 import { delay } from '../../util/time';
+import { ensureAnon } from './config/firebase';
+import { createRoom } from './fsm-actors/create-room';
 import type { Intent } from './types';
 
-interface Input {
+interface Input extends Record<string, unknown> {
   roomId: string;
   intent: Intent;
-  secret?: string;
+  secret: string;
 }
 
-// События для view-model актора (простой редьюсер/transition)
+interface Ctx extends Input {
+  authId?: string;
+}
+
+const requireAuthId = (ctx: Ctx): string => {
+  if (!ctx.authId) throw new Error('authId missing');
+  return ctx.authId;
+};
 
 export const roomInitFSM: AnyStateMachine = setup({
   types: {} as {
     input: Input;
-    context: Input;
+    context: Ctx;
   },
-  // Встроенные шаги — асинхронная логика инкапсулирована в акторах
   actors: {
     auth: fromPromise(async () => {
-      await delay(2000);
-      console.log('auth');
-      const authId = '123';
+      const authId = await ensureAnon();
       return { authId };
     }),
-    createRoom: fromPromise(async () => {
-      console.log('create room');
-      await delay(2000);
+    createRoom: fromPromise(async ({ input }: { input: { roomId: string; authId: string } }) => {
+      await createRoom(input);
       return { roomReady: true };
     }),
     joinRoom: fromPromise(async () => {
@@ -56,9 +69,27 @@ export const roomInitFSM: AnyStateMachine = setup({
       return { cleanupDone: true };
     }),
   },
-  // Экшены объявляем, а реализацию подставим через provide с замыканием на vm
   actions: {
     vmAuthDone: () => {},
+    setAuthId: assign(
+      (
+        { context, event }: { context: Ctx; event: AnyEventObject },
+        params?: { authId?: string },
+      ) => {
+        if (typeof params?.authId === 'string') {
+          return { authId: params.authId };
+        }
+
+        const doneEvent = event as DoneActorEvent<{ authId?: string }>;
+        const authIdFromEvent =
+          typeof doneEvent.output === 'object' ? doneEvent.output?.authId : undefined;
+        if (typeof authIdFromEvent === 'string') {
+          return { authId: authIdFromEvent };
+        }
+
+        return { authId: context.authId };
+      },
+    ),
     vmRoomReady: () => {},
     vmPakeDone: () => {},
     vmSasDone: () => {},
@@ -66,8 +97,12 @@ export const roomInitFSM: AnyStateMachine = setup({
     vmCleanupDone: () => {},
     captureError: () => {},
   },
+  guards: {
+    isCreate: ({ context }: { context: Input }) => context.intent === 'create',
+    isAuthed: ({ context }: { context: Ctx }) => !!context.authId,
+  },
 }).createMachine({
-  context: ({ input }: { input: Input }) => input,
+  context: ({ input }: { input: Input }): Ctx => ({ ...input }),
   id: 'room-fsm',
   initial: 'auth',
   states: {
@@ -75,28 +110,39 @@ export const roomInitFSM: AnyStateMachine = setup({
       tags: ['auth'],
       invoke: {
         src: 'auth',
-        onDone: { target: 'room', actions: 'vmAuthDone' },
+        onDone: {
+          target: 'room',
+          actions: [
+            'vmAuthDone',
+            {
+              type: 'setAuthId',
+              params: ({ event }: { event: DoneActorEvent<{ authId: string }> }) => ({
+                authId: event.output.authId,
+              }),
+            },
+          ],
+        },
         onError: { target: '#room-fsm.failed', actions: 'captureError' },
       },
     },
     room: {
       tags: ['room'],
-      initial: 'decide',
+      initial: 'gate',
       states: {
+        gate: {
+          always: [{ guard: 'isAuthed', target: 'decide' }, { target: '#room-fsm.failed' }],
+        },
         decide: {
-          always: [
-            {
-              guard: ({ context }: { context: Input }) => context.intent === 'create',
-              target: 'create',
-            },
-            { target: 'join' },
-          ],
+          always: [{ guard: 'isCreate', target: 'create' }, { target: 'join' }],
         },
         create: {
           tags: ['creating'],
           invoke: {
             src: 'createRoom',
-            input: ({ context }: { context: Input }) => context,
+            input: ({ context }: { context: Ctx }): { roomId: string; authId: string } => ({
+              roomId: context.roomId,
+              authId: requireAuthId(context),
+            }),
             onDone: { target: 'done', actions: 'vmRoomReady' },
             onError: { target: '#room-fsm.failed', actions: 'captureError' },
           },
@@ -105,13 +151,18 @@ export const roomInitFSM: AnyStateMachine = setup({
           tags: ['joining'],
           invoke: {
             src: 'joinRoom',
-            input: ({ context }: { context: Input }) => context,
+            input: ({ context }: { context: Ctx }): { roomId: string; authId: string } => ({
+              roomId: context.roomId,
+              authId: requireAuthId(context),
+            }),
             onDone: { target: 'done', actions: 'vmRoomReady' },
             onError: { target: '#room-fsm.failed', actions: 'captureError' },
           },
         },
+
         done: { type: 'final' },
       },
+      // Дальше по пайплайну (pake/sas/rtc) по желанию
       onDone: 'pake',
     },
     pake: {
