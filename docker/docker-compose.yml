@@ -1,0 +1,21 @@
+version: '3.9'
+
+x-image-tag: &tag '1.0.0' # меняешь при релизе
+
+services:
+  firebase-emulators:
+    image: ghcr.io/<user>/peach-emus:*tag
+    pull_policy: always
+    ports: ['4000:4000', '9000:9000', '9099:9099']
+    environment:
+      PROJECT_ID: demo-peach-share
+      HOST_BIND: 0.0.0.0
+      UI_PORT: 4000
+      DB_PORT: 9000
+      AUTH_PORT: 9099
+
+  web:
+    image: ghcr.io/<user>/peach-web-emu:*tag
+    pull_policy: always
+    depends_on: [firebase-emulators]
+    ports: ['80:80']

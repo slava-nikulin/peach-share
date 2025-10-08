@@ -1,0 +1,18 @@
+version: '3.9'
+
+services:
+  firebase-emulators:
+    build:
+      context: ../..
+      dockerfile: local/docker/Dockerfile
+    # без volumes => RTDB пустая при каждом старте
+
+  web:
+    build:
+      context: ../..
+      dockerfile: local/docker/web.prod.Dockerfile # Vite prod build + Nginx
+    # для локальной правки кода можно временно добавить:
+    # volumes:
+    #   - ../..:/src:ro
+    #   - /usr/share/nginx/html                       # не монтируем — иначе перезатрёшь сборку
+    # и/или заменить Dockerfile на dev-вариант с HMR
