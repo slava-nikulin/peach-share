@@ -23,19 +23,7 @@ export const USE_EMU: boolean = String(env.VITE_USE_EMULATORS) === 'true';
 export const OFFLINE: boolean = String(env.VITE_OFFLINE_MODE) === 'true';
 const IN_EMU: boolean = USE_EMU || OFFLINE || import.meta.env.MODE === 'emu';
 
-console.log('VITE_USE_EMULATORS');
-console.log(USE_EMU);
-
-console.log('OFFLINE');
-console.log(OFFLINE);
-
-console.log('import.meta.env.MODE');
-console.log(import.meta.env.MODE);
-
-// demo-ProjectId для оффлайна/эмуляторов (оставлено как было)
-const projectId: string = OFFLINE
-  ? `demo-${env.VITE_FIREBASE_PROJECT_ID || 'webrtc-app'}`
-  : env.VITE_FIREBASE_PROJECT_ID;
+const projectId: string = env.VITE_FIREBASE_PROJECT_ID || 'webrtc-app';
 
 // Базовая конфигурация (достаточно для RTDB/Auth)
 const firebaseConfig: FirebaseOptions = {
@@ -70,40 +58,45 @@ if (!OFFLINE) {
   }
 }
 
+// ---- Auth ----
 export const auth: Auth = getAuth(app);
+const EMU_AUTH: boolean = String(env.VITE_EMULATOR_AUTH ?? 'true') === 'true'; // по умолчанию в эму включаем
+if (IN_EMU && EMU_AUTH) {
+  const host = env.VITE_EMULATOR_AUTH_HOST || '127.0.0.1';
+  const port = Number(env.VITE_EMULATOR_AUTH_PORT || 9099);
+  try {
+    connectAuthEmulator(auth, `http://${host}:${port}`, { disableWarnings: true });
+  } catch {}
+}
 
-// Создаём DB и жёстко подключаем эмулятор ДО любых операций
-const _db: Database = getDatabase(app);
-
-console.log('test1');
-console.log(IN_EMU);
+// ---- RTDB ----
+let _db: Database;
 if (IN_EMU) {
   const pageHost = window.location.hostname;
-  const emuHost =
+  const host =
     env.VITE_EMULATOR_RTD_HOST ||
     (pageHost === 'localhost' || pageHost === '127.0.0.1' || pageHost === '::1'
       ? '127.0.0.1'
       : pageHost);
-  const emuPort = Number(env.VITE_EMULATOR_RTD_PORT || 9000);
+  const port = Number(env.VITE_EMULATOR_RTD_PORT || 9000);
+  const ns = env.VITE_EMULATOR_RTD_NS || `${projectId}-default-rtdb`;
 
-  connectDatabaseEmulator(_db, emuHost, emuPort);
+  // Явно фиксируем ns и хост эмулятора
+  _db = getDatabase(app, `http://${host}:${port}?ns=${ns}`);
+  connectDatabaseEmulator(_db, host, port);
 
-  // Подключай Auth-эмулятор только если он опубликован; оставлено для совместимости
-  try {
-    connectAuthEmulator(auth, `http://${emuHost}:9099`, { disableWarnings: true });
-  } catch {
-    // без публикации 9099 просто игнорируем
-  }
-
-  console.log(import.meta.env);
-  console.log('test');
   if (import.meta.env.DEV) {
-    // Дебаг: куда реально пойдут запросы
-    console.log('[EMU] mode=', import.meta.env.MODE, 'flags:', { USE_EMU, OFFLINE, IN_EMU });
+    console.log('[EMU] mode=', import.meta.env.MODE, 'flags:', {
+      USE_EMU,
+      OFFLINE,
+      IN_EMU,
+      EMU_AUTH,
+    });
     console.log('[EMU] RTDB target =', ref(_db, '/').toString());
   }
+} else {
+  _db = getDatabase(app);
 }
-
 export const db: Database = _db;
 
 // Утилита: обеспечить анонимный вход и вернуть uid (без изменений)

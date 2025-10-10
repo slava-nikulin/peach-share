@@ -1,6 +1,12 @@
 FROM node:24-alpine3.22
+
 RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.22/community/" >> /etc/apk/repositories \
  && apk update && apk add --no-cache openjdk21-jre-headless bash
+
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 ENV PATH="$JAVA_HOME/bin:$PATH"
+
+ENV FIREBASE_EMULATOR_DOWNLOAD_PATH=/opt/firebase
+ENV XDG_CACHE_HOME=/opt/firebase/.cache
 RUN npm i -g firebase-tools
+RUN mkdir -p /opt/firebase /opt/firebase/.cache && firebase setup:emulators:database && firebase setup:emulators:ui
