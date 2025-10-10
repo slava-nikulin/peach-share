@@ -1,18 +1,43 @@
-version: '3.9'
-
 services:
-  firebase-emulators:
+  rtdb-emulator:
+    profiles: ['emu']
     build:
-      context: ../..
-      dockerfile: local/docker/Dockerfile
-    # без volumes => RTDB пустая при каждом старте
+      context: ..
+      dockerfile: docker/Dockerfile.firebase
+    working_dir: /app
+    volumes:
+      - ./scripts:/app/scripts:ro
+      - ./config/firebase:/app/config:ro
+      - firebase-emulator-cache:/opt/firebase
+    environment:
+      PROJECT_ID: demo-peach-share
+      FIREBASE_EMULATOR_DOWNLOAD_PATH: /opt/firebase
+    ports:
+      - 4000:4000
+      - 9000:9000
+      # - 9099:9099
+    entrypoint: ['/app/scripts/emulator-entrypoint.sh']
 
   web:
     build:
-      context: ../..
-      dockerfile: local/docker/web.prod.Dockerfile # Vite prod build + Nginx
-    # для локальной правки кода можно временно добавить:
-    # volumes:
-    #   - ../..:/src:ro
-    #   - /usr/share/nginx/html                       # не монтируем — иначе перезатрёшь сборку
-    # и/или заменить Dockerfile на dev-вариант с HMR
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    working_dir: /src
+    volumes:
+      - ..:/src:delegated
+      - pnpm-store:/var/pnpm-store
+      - node_modules:/src/node_modules
+    environment:
+      MODE: emu
+      CHOKIDAR_USEPOLLING: '1'
+      WATCHPACK_POLLING: 'true'
+    ports:
+      - 5173:5173
+    entrypoint: ['/src/docker/scripts/web-entrypoint.sh']
+    depends_on:
+      - rtdb-emulator
+
+volumes:
+  node_modules:
+  pnpm-store:
+  firebase-emulator-cache:

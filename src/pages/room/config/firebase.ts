@@ -21,8 +21,18 @@ const env: ImportMetaEnv = import.meta.env;
 // Флаги окружения
 export const USE_EMU: boolean = String(env.VITE_USE_EMULATORS) === 'true';
 export const OFFLINE: boolean = String(env.VITE_OFFLINE_MODE) === 'true';
+const IN_EMU: boolean = USE_EMU || OFFLINE || import.meta.env.MODE === 'emu';
 
-// demo-ProjectId для оффлайна/эмуляторов
+console.log('VITE_USE_EMULATORS');
+console.log(USE_EMU);
+
+console.log('OFFLINE');
+console.log(OFFLINE);
+
+console.log('import.meta.env.MODE');
+console.log(import.meta.env.MODE);
+
+// demo-ProjectId для оффлайна/эмуляторов (оставлено как было)
 const projectId: string = OFFLINE
   ? `demo-${env.VITE_FIREBASE_PROJECT_ID || 'webrtc-app'}`
   : env.VITE_FIREBASE_PROJECT_ID;
@@ -32,7 +42,8 @@ const firebaseConfig: FirebaseOptions = {
   apiKey: env.VITE_FIREBASE_API_KEY || 'dev-key',
   projectId,
   appId: OFFLINE ? 'demo-app' : env.VITE_FIREBASE_APP_ID,
-  ...(OFFLINE ? {} : { databaseURL: env.VITE_FIREBASE_DATABASE_URL }),
+  // В эмуляторе databaseURL не задаём
+  ...(IN_EMU ? {} : { databaseURL: env.VITE_FIREBASE_DATABASE_URL }),
   ...(env.VITE_FIREBASE_AUTH_DOMAIN ? { authDomain: env.VITE_FIREBASE_AUTH_DOMAIN } : {}),
   ...(env.VITE_FIREBASE_STORAGE_BUCKET ? { storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET } : {}),
   ...(env.VITE_FIREBASE_MESSAGING_SENDER_ID
@@ -60,11 +71,13 @@ if (!OFFLINE) {
 }
 
 export const auth: Auth = getAuth(app);
-export const db: Database = getDatabase(app);
 
-// Подключение к эмуляторам ДО любых операций
-if (USE_EMU || OFFLINE) {
-  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+// Создаём DB и жёстко подключаем эмулятор ДО любых операций
+const _db: Database = getDatabase(app);
+
+console.log('test1');
+console.log(IN_EMU);
+if (IN_EMU) {
   const pageHost = window.location.hostname;
   const emuHost =
     env.VITE_EMULATOR_RTD_HOST ||
@@ -72,10 +85,28 @@ if (USE_EMU || OFFLINE) {
       ? '127.0.0.1'
       : pageHost);
   const emuPort = Number(env.VITE_EMULATOR_RTD_PORT || 9000);
-  connectDatabaseEmulator(db, emuHost, emuPort);
+
+  connectDatabaseEmulator(_db, emuHost, emuPort);
+
+  // Подключай Auth-эмулятор только если он опубликован; оставлено для совместимости
+  try {
+    connectAuthEmulator(auth, `http://${emuHost}:9099`, { disableWarnings: true });
+  } catch {
+    // без публикации 9099 просто игнорируем
+  }
+
+  console.log(import.meta.env);
+  console.log('test');
+  if (import.meta.env.DEV) {
+    // Дебаг: куда реально пойдут запросы
+    console.log('[EMU] mode=', import.meta.env.MODE, 'flags:', { USE_EMU, OFFLINE, IN_EMU });
+    console.log('[EMU] RTDB target =', ref(_db, '/').toString());
+  }
 }
 
-// Утилита: обеспечить анонимный вход и вернуть uid
+export const db: Database = _db;
+
+// Утилита: обеспечить анонимный вход и вернуть uid (без изменений)
 let ensureAnonPromise: Promise<string> | null = null;
 export function ensureAnon(): Promise<string> {
   if (auth.currentUser?.uid) return Promise.resolve(auth.currentUser.uid);
@@ -101,7 +132,6 @@ export function ensureAnon(): Promise<string> {
           await signInAnonymously(auth);
         }
       } catch (e) {
-        // onAuthStateChanged может сработать позже, но если signIn кинул — снимем подписку
         unsub();
         reject(e);
       }
@@ -114,8 +144,7 @@ export function ensureAnon(): Promise<string> {
   return ensureAnonPromise;
 }
 
-// Подписка на статус подключения RTDB через /.info/connected
-// Возвращает функцию отписки; колбэк получает boolean
+// Подписка на статус подключения RTDB через /.info/connected (без изменений)
 export function rtdbConnectedSubscribe(
   database: Database,
   cb: (connected: boolean) => void,
