@@ -71,25 +71,16 @@ export const roomInitFSM: AnyStateMachine = setup({
   },
   actions: {
     vmAuthDone: () => {},
-    setAuthId: assign(
-      (
-        { context, event }: { context: Ctx; event: AnyEventObject },
-        params?: { authId?: string },
-      ) => {
-        if (typeof params?.authId === 'string') {
-          return { authId: params.authId };
-        }
+    setAuthId: assign(({ context, event }: { context: Ctx; event: AnyEventObject }) => {
+      const doneEvent = event as DoneActorEvent<{ authId?: string }>;
+      const authIdFromEvent =
+        typeof doneEvent.output === 'object' ? doneEvent.output?.authId : undefined;
+      if (typeof authIdFromEvent === 'string') {
+        return { authId: authIdFromEvent };
+      }
 
-        const doneEvent = event as DoneActorEvent<{ authId?: string }>;
-        const authIdFromEvent =
-          typeof doneEvent.output === 'object' ? doneEvent.output?.authId : undefined;
-        if (typeof authIdFromEvent === 'string') {
-          return { authId: authIdFromEvent };
-        }
-
-        return { authId: context.authId };
-      },
-    ),
+      return { authId: context.authId };
+    }),
     vmRoomReady: () => {},
     vmPakeDone: () => {},
     vmSasDone: () => {},
@@ -112,15 +103,7 @@ export const roomInitFSM: AnyStateMachine = setup({
         src: 'auth',
         onDone: {
           target: 'room',
-          actions: [
-            'vmAuthDone',
-            {
-              type: 'setAuthId',
-              params: ({ event }: { event: DoneActorEvent<{ authId: string }> }) => ({
-                authId: event.output.authId,
-              }),
-            },
-          ],
+          actions: ['vmAuthDone', 'setAuthId'],
         },
         onError: { target: '#room-fsm.failed', actions: 'captureError' },
       },

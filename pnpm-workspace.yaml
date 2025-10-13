@@ -1,5 +1,7 @@
 onlyBuiltDependencies:
   - '@firebase/util'
   - '@tailwindcss/oxide'
+  - cpu-features
   - esbuild
   - protobufjs
+  - ssh2
