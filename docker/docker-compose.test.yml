@@ -1,0 +1,25 @@
+services:
+  rtdb-emulator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.firebase
+    working_dir: /app
+    profiles: ['emu']
+    volumes:
+      - ./scripts:/app/scripts:ro
+      - ./config/firebase:/app/config:ro
+      - firebase-emulator-cache:/opt/firebase
+      - firebase-emulator-cache-ui:/opt/firebase/.cache
+    environment:
+      PROJECT_ID: demo-peach-share
+      FIREBASE_EMULATOR_DOWNLOAD_PATH: /opt/firebase
+      XDG_CACHE_HOME: /opt/firebase/.cache
+    ports:
+      - '4000' # Только внутренний порт, внешний выберет testcontainers
+      - '9000'
+      - '9099'
+    entrypoint: ['/app/scripts/emulator-entrypoint.sh']
+
+volumes:
+  firebase-emulator-cache:
+  firebase-emulator-cache-ui:
