@@ -11,7 +11,8 @@
     "lint:fix": "biome check --write --unsafe",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "docker:dev": "MODE=development docker compose -f docker/docker-compose.dev.yml up",
-    "docker:emu": "docker compose -f docker/docker-compose.dev.yml --profile emu up"
+    "docker:emu": "docker compose -f docker/docker-compose.dev.yml --profile emu up",
+    "test": "pnpm vitest run"
   },
   "dependencies": {
     "@solidjs/router": "^0.15.3",
