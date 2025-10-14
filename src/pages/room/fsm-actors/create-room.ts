@@ -1,14 +1,8 @@
 import { ref, runTransaction, serverTimestamp } from 'firebase/database';
 import { db } from '../config/firebase';
+import type { RoomRecord } from './type';
 
-interface RoomRecord {
-  room_id: string;
-  owner: string;
-  created_at: number | object;
-  updated_at: number | object;
-}
-
-export async function createRoom(input: { roomId: string; authId: string }): Promise<void> {
+export async function createRoom(input: { roomId: string; authId: string }): Promise<RoomRecord> {
   const roomRef = ref(db, `rooms/${input.roomId}`);
   const now = serverTimestamp();
   const payload: RoomRecord = {
@@ -20,14 +14,10 @@ export async function createRoom(input: { roomId: string; authId: string }): Pro
 
   const res = await runTransaction(
     roomRef,
-    (cur: RoomRecord | null) => {
-      if (cur !== null) return;
-      return payload;
-    },
+    (cur: RoomRecord | null) => (cur !== null ? undefined : payload),
     { applyLocally: false },
   );
 
-  if (!res.committed) {
-    throw new Error('room_already_exists');
-  }
+  if (!res.committed) throw new Error('room_already_exists');
+  return res.snapshot.val() as RoomRecord;
 }

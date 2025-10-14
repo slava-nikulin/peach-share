@@ -8,8 +8,10 @@ import {
   setup,
 } from 'xstate';
 import { delay } from '../../util/time';
-import { ensureAnon } from './config/firebase';
+import { anonAuth } from './fsm-actors/auth';
 import { createRoom } from './fsm-actors/create-room';
+import { joinRoom } from './fsm-actors/join-room';
+import type { RoomRecord } from './fsm-actors/type';
 import type { Intent } from './types';
 
 interface Input extends Record<string, unknown> {
@@ -20,6 +22,7 @@ interface Input extends Record<string, unknown> {
 
 interface Ctx extends Input {
   authId?: string;
+  room?: RoomRecord;
 }
 
 const requireAuthId = (ctx: Ctx): string => {
@@ -34,17 +37,16 @@ export const roomInitFSM: AnyStateMachine = setup({
   },
   actors: {
     auth: fromPromise(async () => {
-      const authId = await ensureAnon();
+      const authId = await anonAuth();
       return { authId };
     }),
     createRoom: fromPromise(async ({ input }: { input: { roomId: string; authId: string } }) => {
-      await createRoom(input);
-      return { roomReady: true };
+      const room = await createRoom(input);
+      return { roomReady: true, room: room };
     }),
-    joinRoom: fromPromise(async () => {
-      console.log('join room');
-      await delay(2000);
-      return { roomReady: true };
+    joinRoom: fromPromise(async ({ input }: { input: { roomId: string; authId: string } }) => {
+      const room = await joinRoom(input);
+      return { roomReady: true, room: room };
     }),
     pake: fromPromise(async () => {
       console.log('pake key');
@@ -71,15 +73,34 @@ export const roomInitFSM: AnyStateMachine = setup({
   },
   actions: {
     vmAuthDone: () => {},
-    setAuthId: assign(({ context, event }: { context: Ctx; event: AnyEventObject }) => {
+    setAuthId: assign(({ event }: { context: Ctx; event: AnyEventObject }) => {
       const doneEvent = event as DoneActorEvent<{ authId?: string }>;
-      const authIdFromEvent =
-        typeof doneEvent.output === 'object' ? doneEvent.output?.authId : undefined;
-      if (typeof authIdFromEvent === 'string') {
-        return { authId: authIdFromEvent };
-      }
 
-      return { authId: context.authId };
+      const { output } = doneEvent;
+      if (
+        typeof output === 'object' &&
+        output !== null &&
+        'authId' in output &&
+        typeof output.authId === 'string'
+      ) {
+        return { authId: output.authId };
+      }
+      return {};
+    }),
+    setRoom: assign(({ event }: { context: Ctx; event: AnyEventObject }) => {
+      const doneEvent = event as DoneActorEvent<{ room?: RoomRecord }>;
+
+      const { output } = doneEvent;
+      if (
+        typeof output === 'object' &&
+        output !== null &&
+        'room' in output &&
+        typeof output.room === 'object' &&
+        output.room !== null
+      ) {
+        return { room: doneEvent.output.room as RoomRecord };
+      }
+      return {};
     }),
     vmRoomReady: () => {},
     vmPakeDone: () => {},
@@ -126,7 +147,7 @@ export const roomInitFSM: AnyStateMachine = setup({
               roomId: context.roomId,
               authId: requireAuthId(context),
             }),
-            onDone: { target: 'done', actions: 'vmRoomReady' },
+            onDone: { target: 'done', actions: ['vmRoomReady', 'setRoom'] },
             onError: { target: '#room-fsm.failed', actions: 'captureError' },
           },
         },
@@ -138,7 +159,7 @@ export const roomInitFSM: AnyStateMachine = setup({
               roomId: context.roomId,
               authId: requireAuthId(context),
             }),
-            onDone: { target: 'done', actions: 'vmRoomReady' },
+            onDone: { target: 'done', actions: ['vmRoomReady', 'setRoom'] },
             onError: { target: '#room-fsm.failed', actions: 'captureError' },
           },
         },

@@ -1,13 +1,7 @@
 // src/config/firebase.ts
 import { type FirebaseApp, type FirebaseOptions, getApps, initializeApp } from 'firebase/app';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
-import {
-  type Auth,
-  connectAuthEmulator,
-  getAuth,
-  onAuthStateChanged,
-  signInAnonymously,
-} from 'firebase/auth';
+import { type Auth, connectAuthEmulator, getAuth } from 'firebase/auth';
 import {
   connectDatabaseEmulator,
   type Database,
@@ -98,44 +92,6 @@ if (IN_EMU) {
   _db = getDatabase(app);
 }
 export const db: Database = _db;
-
-// Утилита: обеспечить анонимный вход и вернуть uid (без изменений)
-let ensureAnonPromise: Promise<string> | null = null;
-export function ensureAnon(): Promise<string> {
-  if (auth.currentUser?.uid) return Promise.resolve(auth.currentUser.uid);
-  if (ensureAnonPromise) return ensureAnonPromise;
-
-  ensureAnonPromise = new Promise<string>((resolve, reject) => {
-    const unsub = onAuthStateChanged(
-      auth,
-      (u) => {
-        if (u?.uid) {
-          unsub();
-          resolve(u.uid);
-        }
-      },
-      (err) => {
-        unsub();
-        reject(err);
-      },
-    );
-    const performSignIn = async (): Promise<void> => {
-      try {
-        if (!auth.currentUser) {
-          await signInAnonymously(auth);
-        }
-      } catch (e) {
-        unsub();
-        reject(e);
-      }
-    };
-    void performSignIn();
-  }).finally(() => {
-    ensureAnonPromise = null;
-  });
-
-  return ensureAnonPromise;
-}
 
 // Подписка на статус подключения RTDB через /.info/connected (без изменений)
 export function rtdbConnectedSubscribe(

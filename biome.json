@@ -153,6 +153,26 @@
           }
         }
       }
+    },
+    {
+      "includes": ["**/*.spec.ts"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noExcessiveLinesPerFunction": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/tests/helpers/firebase-emu.ts"],
+      "linter": {
+        "rules": {
+          "nursery": {
+            "noUnresolvedImports": "off"
+          }
+        }
+      }
     }
   ]
 }
