@@ -1,39 +1,72 @@
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { auth } from '../config/firebase';
 
-let ensureAnonPromise: Promise<string> | null = null;
-export function anonAuth(): Promise<string> {
-  if (auth.currentUser?.uid) return Promise.resolve(auth.currentUser.uid);
-  if (ensureAnonPromise) return ensureAnonPromise;
+let authReadyP: Promise<string> | null = null;
+let cachedUid: string | null = auth.currentUser?.uid ?? null;
+let startedAnonSignIn = false;
 
-  ensureAnonPromise = new Promise<string>((resolve, reject) => {
-    const unsub = onAuthStateChanged(
-      auth,
-      (u) => {
-        if (u?.uid) {
-          unsub();
-          resolve(u.uid);
-        }
-      },
-      (err) => {
-        unsub();
-        reject(err);
-      },
-    );
-    const performSignIn = async (): Promise<void> => {
-      try {
-        if (!auth.currentUser) {
-          await signInAnonymously(auth);
-        }
-      } catch (e) {
-        unsub();
-        reject(e);
-      }
-    };
-    void performSignIn();
-  }).finally(() => {
-    ensureAnonPromise = null;
+export function anonAuth(timeoutMs: number = 15000): Promise<string> {
+  if (cachedUid || auth.currentUser?.uid) {
+    const uid = cachedUid ?? auth.currentUser?.uid;
+    if (!uid) {
+      return Promise.reject(new Error('no_auth_uid'));
+    }
+    cachedUid = uid;
+    return Promise.resolve(uid);
+  }
+  if (authReadyP) return authReadyP;
+
+  let resolveWrap!: (uid: string) => void;
+  let rejectWrap!: (e: unknown) => void;
+  authReadyP = new Promise<string>((res, rej) => {
+    resolveWrap = res;
+    rejectWrap = rej;
   });
 
-  return ensureAnonPromise;
+  const timer = setTimeout(() => {
+    authReadyP = null;
+    startedAnonSignIn = false;
+    rejectWrap(new Error('auth_timeout'));
+  }, timeoutMs);
+
+  const unsub = onAuthStateChanged(
+    auth,
+    (u) => {
+      if (u?.uid) {
+        cachedUid = u.uid;
+        clearTimeout(timer);
+        unsub();
+        // закрепляем «липкий» resolved
+        const uid = u.uid;
+        authReadyP = Promise.resolve(uid);
+        resolveWrap(uid);
+      }
+    },
+    (err) => {
+      clearTimeout(timer);
+      unsub();
+      authReadyP = null;
+      startedAnonSignIn = false;
+      rejectWrap(err);
+    },
+  );
+
+  if (!auth.currentUser && !startedAnonSignIn) {
+    startedAnonSignIn = true;
+    signInAnonymously(auth).catch((e) => {
+      clearTimeout(timer);
+      unsub();
+      authReadyP = null;
+      startedAnonSignIn = false;
+      rejectWrap(e);
+    });
+  }
+
+  return authReadyP;
+}
+
+export function resetAnonAuthCache(): void {
+  cachedUid = null;
+  authReadyP = null;
+  startedAnonSignIn = false;
 }

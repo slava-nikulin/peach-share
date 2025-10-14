@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createActor } from 'xstate';
 import { fromPromise } from 'xstate/actors';
-import type { RoomRecord } from '../fsm-actors/type';
-import { roomInitFSM } from '../room-fsm';
+import type { RoomRecord } from '../../fsm-actors/type';
+import { roomInitFSM } from '../../room-fsm';
 
 describe('room-fsm component tests', () => {
   it('happy path (create): auth → create → pake → sas → rtc → cleanup → done', async () => {

@@ -7,7 +7,8 @@ describe('anonAuth integration', () => {
   let cleanupEnv: { restore: () => void };
   let emu: Awaited<ReturnType<typeof startEmu>>;
   let auth: import('firebase/auth').Auth;
-  let anonAuth: () => Promise<string>;
+  let anonAuth: (timeoutMs?: number) => Promise<string>;
+  let resetAnonAuthCache: () => void;
 
   beforeAll(async () => {
     emu = await startEmu();
@@ -16,35 +17,38 @@ describe('anonAuth integration', () => {
       dbPort: emu.ports.db,
       authPort: emu.ports.auth,
     });
-
-    // ВАЖНО: импортируем после установки env/window
     ({ auth } = await import('../../config/firebase'));
-    ({ anonAuth } = await import('../../fsm-actors/auth'));
+    const mod = await import('../../fsm-actors/auth');
+    anonAuth = mod.anonAuth;
+    resetAnonAuthCache = mod.resetAnonAuthCache;
   }, 240_000);
 
   afterAll(async () => {
     try {
-      const { auth } = await import('../../config/firebase');
       await signOut(auth).catch(() => {});
     } catch {}
     cleanupEnv?.restore?.();
     await stopEmu(emu?.env).catch(() => {});
   });
 
-  it('возвращает UID анонимного пользователя', async () => {
+  it('возвращает UID', async () => {
     const uid = await anonAuth();
     expect(typeof uid).toBe('string');
     expect(uid.length).toBeGreaterThan(0);
   }, 60_000);
 
-  it('дедуплицирует параллельные вызовы и возвращает один и тот же UID', async () => {
-    const [u1, u2] = await Promise.all([anonAuth(), anonAuth()]);
-    expect(u1).toBe(u2);
+  it('req deduplication', async () => {
+    await signOut(auth).catch(() => {});
+    resetAnonAuthCache();
+
+    const [u1, u2, u3] = await Promise.all([anonAuth(), anonAuth(), anonAuth()]);
+    expect(new Set([u1, u2, u3]).size).toBe(1);
   }, 60_000);
 
-  it('после signOut() выдает новый UID', async () => {
+  it('после signOut() выдаёт новый UID', async () => {
     const u1 = await anonAuth();
     await signOut(auth);
+    resetAnonAuthCache();
     const u2 = await anonAuth();
     expect(u2).not.toBe(u1);
   }, 60_000);
