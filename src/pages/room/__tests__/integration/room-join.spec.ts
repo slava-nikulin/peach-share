@@ -32,7 +32,7 @@ describe('joinRoom RTDB integration', () => {
   }, 240_000);
 
   afterAll(async () => {
-    cleanupEnv.restore();
+    cleanupEnv?.restore?.();
     await stopEmu(emu.env);
   });
 

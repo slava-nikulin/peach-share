@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "docker:dev": "MODE=development docker compose -f docker/docker-compose.dev.yml up",
     "docker:emu": "docker compose -f docker/docker-compose.dev.yml --profile emu up",
-    "test": "pnpm vitest run"
+    "test": "vitest run",
+    "test:unit": "vitest run --exclude \"**/__tests__/integration/**\"",
+    "test:integration": "vitest run \"src/**/__tests__/integration/**/*.spec.ts\""
   },
   "dependencies": {
     "@solidjs/router": "^0.15.3",

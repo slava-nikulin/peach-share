@@ -36,7 +36,7 @@ describe('createRoom RTDB integration', () => {
   });
 
   afterAll(async () => {
-    cleanupEnv.restore();
+    cleanupEnv?.restore?.();
     await stopEmu(emu.env);
   });
 
