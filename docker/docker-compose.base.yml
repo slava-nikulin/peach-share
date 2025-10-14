@@ -1,0 +1,41 @@
+services:
+  rtdb-emulator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.firebase
+    working_dir: /app
+    volumes:
+      - ./scripts:/app/scripts:ro
+      - ./config/firebase:/app/config:ro
+      - firebase-emulator-cache:/opt/firebase
+      - firebase-emulator-cache-ui:/opt/firebase/.cache
+    environment:
+      PROJECT_ID: demo-peach-share
+      FIREBASE_EMULATOR_DOWNLOAD_PATH: /opt/firebase
+      XDG_CACHE_HOME: /opt/firebase/.cache
+    entrypoint: ['/app/scripts/emulator-entrypoint.sh']
+    profiles: ['emu']
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    working_dir: /src
+    volumes:
+      - ..:/src:delegated
+      - pnpm-store:/var/pnpm-store
+      - node_modules:/src/node_modules
+    environment:
+      MODE: emu
+      CHOKIDAR_USEPOLLING: '1'
+      WATCHPACK_POLLING: 'true'
+    entrypoint: ['/src/docker/scripts/web-entrypoint.sh']
+    depends_on:
+      - rtdb-emulator
+    profiles: ['dev']
+
+volumes:
+  node_modules:
+  pnpm-store:
+  firebase-emulator-cache:
+  firebase-emulator-cache-ui:
