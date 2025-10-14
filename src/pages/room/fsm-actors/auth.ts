@@ -24,9 +24,10 @@ export function anonAuth(timeoutMs: number = 15000): Promise<string> {
   });
 
   const timer = setTimeout(() => {
+    const err = new Error('auth_timeout');
+    rejectWrap(err);
     authReadyP = null;
     startedAnonSignIn = false;
-    rejectWrap(new Error('auth_timeout'));
   }, timeoutMs);
 
   const unsub = onAuthStateChanged(

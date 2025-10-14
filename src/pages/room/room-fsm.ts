@@ -76,12 +76,31 @@ export const roomInitFSM: AnyStateMachine = setup({
     setAuthId: assign(({ event }: { context: Ctx; event: AnyEventObject }) => {
       const doneEvent = event as DoneActorEvent<{ authId?: string }>;
 
-      return { authId: doneEvent.output.authId };
+      const { output } = doneEvent;
+      if (
+        typeof output === 'object' &&
+        output !== null &&
+        'authId' in output &&
+        typeof output.authId === 'string'
+      ) {
+        return { authId: output.authId };
+      }
+      return {};
     }),
     setRoom: assign(({ event }: { context: Ctx; event: AnyEventObject }) => {
       const doneEvent = event as DoneActorEvent<{ room?: RoomRecord }>;
 
-      return { room: doneEvent.output.room };
+      const { output } = doneEvent;
+      if (
+        typeof output === 'object' &&
+        output !== null &&
+        'room' in output &&
+        typeof output.room === 'object' &&
+        output.room !== null
+      ) {
+        return { room: doneEvent.output.room as RoomRecord };
+      }
+      return {};
     }),
     vmRoomReady: () => {},
     vmPakeDone: () => {},
