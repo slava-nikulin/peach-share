@@ -1,11 +1,12 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 echo "Running pre-push checks..."
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-REGEX='^((feat|fix|refactor|test|chore|docs|perf|ci|build|hotfix)(\+(feat|fix|refactor|test|chore|docs|perf|ci|build|hotfix)){0,2})/(([a-z0-9]+(-[a-z0-9]+)*)-)?[a-z0-9]+(-[a-z0-9]+)*( -[A-Z]+-[0-9]+)?$'
-REGEX=${REGEX// /}
+REGEX='^((feat|fix|refactor|test|chore|docs|perf|ci|build|hotfix)(\+(feat|fix|refactor|test|chore|docs|perf|ci|build|hotfix)){0,2})/(([a-z0-9]+(-[a-z0-9]+)*)-)?[a-z0-9]+(-[a-z0-9]+)*(-[A-Z]+-[0-9]+)?$'
 
-if [[ ! "$BRANCH" =~ $REGEX ]]; then
+if printf '%s\n' "$BRANCH" | grep -Eq "$REGEX"; then
+  echo "✅ Branch name OK: $BRANCH"
+else
   echo "============== BRANCH NAME CHECK =============="
   echo "❌ Invalid branch name: $BRANCH"
   echo "Expected: <type>[+<type>]/[<scope>-]<slug>[-<TICKET>]"
