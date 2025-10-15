@@ -16,7 +16,7 @@
     "test:int": "vitest run --project integration",
     "test:e2e": "vitest run --project e2e",
     "ci:local": "act -P ubuntu-latest=catthehacker/ubuntu:act-22.04 -e .github/workflows/act.event.json pull_request",
-    "prepare": "./.husky/pre-push"
+    "check": "./.husky/pre-push"
   },
   "dependencies": {
     "@solidjs/router": "^0.15.3",
