@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 echo "Running pre-push checks..."
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
