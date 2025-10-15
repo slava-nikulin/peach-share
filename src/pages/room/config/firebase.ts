@@ -17,7 +17,7 @@ export const USE_EMU: boolean = String(env.VITE_USE_EMULATORS) === 'true';
 export const OFFLINE: boolean = String(env.VITE_OFFLINE_MODE) === 'true';
 const IN_EMU: boolean = USE_EMU || OFFLINE || import.meta.env.MODE === 'emu';
 
-const projectId: string = env.VITE_FIREBASE_PROJECT_ID || 'webrtc-app';
+const projectId: string = env.VITE_FIREBASE_PROJECT_ID || 'peach-share-app';
 
 // Базовая конфигурация (достаточно для RTDB/Auth)
 const firebaseConfig: FirebaseOptions = {
