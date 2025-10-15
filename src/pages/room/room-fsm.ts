@@ -11,6 +11,7 @@ import { delay } from '../../util/time';
 import { anonAuth } from './fsm-actors/auth';
 import { createRoom } from './fsm-actors/create-room';
 import { joinRoom } from './fsm-actors/join-room';
+import { startPakeSession } from './fsm-actors/pake';
 import type { Intent, RoomRecord } from './types';
 
 interface Input extends Record<string, unknown> {
@@ -22,11 +23,18 @@ interface Input extends Record<string, unknown> {
 interface Ctx extends Input {
   authId?: string;
   room?: RoomRecord;
+  encKey?: Uint8Array;
+  sas?: string;
 }
 
 const requireAuthId = (ctx: Ctx): string => {
   if (!ctx.authId) throw new Error('authId missing');
   return ctx.authId;
+};
+
+const requireRoom = (ctx: Ctx): RoomRecord => {
+  if (!ctx.room) throw new Error('authId missing');
+  return ctx.room;
 };
 
 export const roomInitFSM: AnyStateMachine = setup({
@@ -47,12 +55,21 @@ export const roomInitFSM: AnyStateMachine = setup({
       const room = await joinRoom(input);
       return { roomReady: true, room: room };
     }),
-    pake: fromPromise(async () => {
-      console.log('pake key');
-      const key = '321';
-      await delay(2000);
-      return { pakeKey: key };
-    }),
+    pake: fromPromise(
+      async ({ input }: { input: { room: RoomRecord; intent: Intent; secret: string } }) => {
+        const role = input.intent === 'create' ? 'owner' : 'guest';
+        const { enc_key, sas } = await startPakeSession({
+          roomId: input.room.room_id,
+          role,
+          sharedS: input.secret,
+          timeoutMs: undefined,
+          engine: undefined,
+          sasDigits: undefined,
+          context: undefined,
+        });
+        return { pakeKey: enc_key, sas };
+      },
+    ),
     sas: fromPromise(async () => {
       console.log('pake session(sas)');
       await delay(2000);
@@ -98,6 +115,21 @@ export const roomInitFSM: AnyStateMachine = setup({
         output.room !== null
       ) {
         return { room: doneEvent.output.room as RoomRecord };
+      }
+      return {};
+    }),
+    setPakeResult: assign(({ event }: { context: Ctx; event: AnyEventObject }) => {
+      const doneEvent = event as DoneActorEvent<{ pakeKey?: Uint8Array; sas?: string }>;
+
+      const { output } = doneEvent;
+      if (
+        typeof output === 'object' &&
+        output !== null &&
+        'pakeKey' in output &&
+        typeof output.pakeKey === 'object' &&
+        output.pakeKey !== null
+      ) {
+        return { encKey: doneEvent.output.pakeKey as Uint8Array, sas: doneEvent.output.sas };
       }
       return {};
     }),
@@ -172,8 +204,16 @@ export const roomInitFSM: AnyStateMachine = setup({
       tags: ['pake'],
       invoke: {
         src: 'pake',
-        input: ({ context }: { context: Input }) => context,
-        onDone: { target: 'sas', actions: 'vmPakeDone' },
+        input: ({
+          context,
+        }: {
+          context: Ctx;
+        }): { room: RoomRecord; intent: Intent; secret: string } => ({
+          intent: context.intent,
+          room: requireRoom(context),
+          secret: context.secret,
+        }),
+        onDone: { target: 'sas', actions: ['vmPakeDone', 'setPakeResult'] },
         onError: { target: '#room-fsm.failed', actions: 'captureError' },
       },
     },

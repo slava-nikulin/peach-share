@@ -1,6 +1,7 @@
 import { type Accessor, createSignal, type Setter } from 'solid-js';
 
 export type Intent = 'create' | 'join';
+export type Role = 'owner' | 'guest';
 
 export interface RoomRecord {
   room_id: string;
