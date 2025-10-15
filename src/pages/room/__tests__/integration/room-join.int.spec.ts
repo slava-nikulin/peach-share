@@ -2,7 +2,7 @@ import { type Database, get, ref } from 'firebase/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { setupFirebaseTestEnv } from '../../../../tests/helpers/env';
 import { startEmu, stopEmu } from '../../../../tests/helpers/firebase-emu';
-import type { RoomRecord } from '../../fsm-actors/type';
+import type { RoomRecord } from '../../types';
 
 describe('joinRoom RTDB integration', () => {
   let emu: Awaited<ReturnType<typeof startEmu>>;

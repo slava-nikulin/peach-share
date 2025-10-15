@@ -2,7 +2,7 @@ import { type Database, get, ref, remove } from 'firebase/database';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { setupFirebaseTestEnv } from '../../../../tests/helpers/env';
 import { startEmu, stopEmu } from '../../../../tests/helpers/firebase-emu';
-import type { RoomRecord } from '../../fsm-actors/type';
+import type { RoomRecord } from '../../types';
 
 describe('createRoom RTDB integration', () => {
   let db: Database;
