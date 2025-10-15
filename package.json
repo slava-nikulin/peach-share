@@ -5,16 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "docker:emu": "docker compose -f docker/docker-compose.dev.yml --profile emu up",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "biome check .",
     "lint:fix": "biome check --write --unsafe",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "docker:dev": "MODE=development docker compose -f docker/docker-compose.dev.yml up",
-    "docker:emu": "docker compose -f docker/docker-compose.dev.yml --profile emu up",
     "test": "vitest run",
-    "test:unit": "vitest run --exclude \"**/__tests__/integration/**\"",
-    "test:integration": "vitest run --dir src/pages/room/__tests__/integration"
+    "test:unit": "vitest run --project unit",
+    "test:int": "vitest run --project integration",
+    "test:e2e": "vitest run --project e2e",
+    "ci:local": "act -P ubuntu-latest=catthehacker/ubuntu:act-22.04 push -e .github/workflows/act.event.json",
+    "prepare": "husky"
   },
   "dependencies": {
     "@solidjs/router": "^0.15.3",
@@ -28,6 +30,7 @@
     "@biomejs/biome": "^2.2.5",
     "@tailwindcss/vite": "^4.1.13",
     "@types/dockerode": "^3.3.44",
+    "husky": "^9.1.7",
     "jsdom": "^27.0.0",
     "tailwindcss": "^4.1.13",
     "testcontainers": "11.7.1",

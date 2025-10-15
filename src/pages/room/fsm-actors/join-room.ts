@@ -8,7 +8,7 @@ import {
   serverTimestamp,
 } from 'firebase/database';
 import { db } from '../config/firebase';
-import type { RoomRecord } from './type';
+import type { RoomRecord } from '../types';
 
 async function waitForRoomExists(roomRef: DatabaseReference, timeoutMs: number): Promise<void> {
   const snap = await get(roomRef);
