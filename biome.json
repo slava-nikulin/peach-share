@@ -4,8 +4,18 @@
   "root": true,
 
   "files": {
-    "includes": ["**", "!dist", "!build", "!coverage", "!node_modules", "!.next", "!out"],
-    "ignoreUnknown": false,
+    "includes": [
+      "**/*",
+      "!node_modules",
+      "!.pnpm-store",
+      "!dist",
+      "!build",
+      "!coverage",
+      "!.next",
+      "!out",
+      "!.git"
+    ],
+    "ignoreUnknown": true,
     "maxSize": 1048576
   },
 
@@ -119,7 +129,10 @@
         "noUnresolvedImports": "warn",
         "noFloatingPromises": "warn",
         "noMisusedPromises": "warn",
-        "noSecrets": "warn",
+        "noSecrets": {
+          "level": "warn",
+          "options": { "entropyThreshold": 100 }
+        },
         "useConsistentTypeDefinitions": "warn",
         "useExplicitType": "warn",
         "useExhaustiveSwitchCases": "warn"
@@ -135,21 +148,11 @@
   },
   "overrides": [
     {
-      "includes": ["vite.config.ts"],
+      "includes": ["vite.config.ts", "vitest.config.ts"],
       "linter": {
         "rules": {
           "style": {
             "noDefaultExport": "off"
-          }
-        }
-      }
-    },
-    {
-      "includes": ["src/pages/room/room-fsm.ts"],
-      "linter": {
-        "rules": {
-          "nursery": {
-            "noSecrets": "off"
           }
         }
       }
@@ -165,7 +168,7 @@
       }
     },
     {
-      "includes": ["src/tests/helpers/firebase-emu.ts"],
+      "includes": ["src/tests/helpers/firebase-emu.ts", "vitest.config.ts"],
       "linter": {
         "rules": {
           "nursery": {

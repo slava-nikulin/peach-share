@@ -1,6 +1,6 @@
 import { ref, runTransaction, serverTimestamp } from 'firebase/database';
 import { db } from '../config/firebase';
-import type { RoomRecord } from './type';
+import type { RoomRecord } from '../types';
 
 export async function patchRoom(roomId: string, patch: Partial<RoomRecord>): Promise<RoomRecord> {
   const roomRef = ref(db, `rooms/${roomId}`);

@@ -1,6 +1,18 @@
 import { type Accessor, createSignal, type Setter } from 'solid-js';
 
 export type Intent = 'create' | 'join';
+
+export interface RoomRecord {
+  room_id: string;
+  owner: string;
+  guestId?: string;
+  created_at: number | object;
+  updated_at: number | object;
+
+  pake_state?: 'init' | 'keys_exchanged' | 'verified';
+  pake_data?: unknown;
+}
+
 export interface RoomVM {
   isRoomCreated: Accessor<boolean>;
   isRtcReady: Accessor<boolean>;

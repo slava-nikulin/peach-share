@@ -11,8 +11,7 @@ import { delay } from '../../util/time';
 import { anonAuth } from './fsm-actors/auth';
 import { createRoom } from './fsm-actors/create-room';
 import { joinRoom } from './fsm-actors/join-room';
-import type { RoomRecord } from './fsm-actors/type';
-import type { Intent } from './types';
+import type { Intent, RoomRecord } from './types';
 
 interface Input extends Record<string, unknown> {
   roomId: string;
