@@ -7,6 +7,17 @@ import type { RoomRecord } from '../../types';
 
 type StartRoomFlow = typeof import('../../room-init').startRoomFlow;
 type RoomInitSnapshot = ReturnType<RoomInitActor['getSnapshot']>;
+interface PakeSnapshot {
+  owner: { msg_b64: string; nonce_b64: string };
+  guest: { msg_b64: string; nonce_b64: string };
+  mac: {
+    owner: { mac_b64: string };
+    guest: { mac_b64: string };
+  };
+  status: { ok: boolean };
+}
+
+const SIX_DIGIT_REGEX = /^\d{6}$/;
 
 const untilDone = (actor: RoomInitActor, timeoutMs: number = 120_000): Promise<void> =>
   new Promise<void>((res, rej) => {
@@ -77,6 +88,8 @@ describe('room init e2e (concurrent)', () => {
     // одновременный старт — join сам подождёт появления записи
     const creator = startRoomFlow({ roomId, intent: 'create', secret }, onErr);
     const joiner = startRoomFlow({ roomId, intent: 'join', secret }, onErr);
+    const cVM = creator.vm;
+    const jVM = joiner.vm;
 
     await Promise.all([untilDone(creator.actor), untilDone(joiner.actor)]);
 
@@ -96,6 +109,63 @@ describe('room init e2e (concurrent)', () => {
     const stored = await readRoom(db, roomId);
     expect(stored?.room_id).toBe(roomId);
     expect(stored?.owner).toBe(cRoom.owner);
+
+    // --- PAKE: проверяем результат в контексте
+    expect(cCtx.encKey).toBeDefined();
+    expect(jCtx.encKey).toBeDefined();
+    expect(Array.from(cCtx.encKey as Uint8Array)).toEqual(Array.from(jCtx.encKey as Uint8Array));
+    expect((cCtx.encKey as Uint8Array).length).toBe(32);
+
+    expect(cCtx.sas).toBeDefined();
+    expect(jCtx.sas).toBeDefined();
+    expect(cCtx.sas).toMatch(SIX_DIGIT_REGEX);
+    expect(cCtx.sas).toBe(jCtx.sas);
+
+    // --- PAKE: проверяем артефакты в RTDB
+    const pakePath = `rooms/${roomId}/pake`;
+    const pakeSnap = await get(ref(db, pakePath));
+    expect(pakeSnap.exists()).toBe(true);
+
+    const pake = pakeSnap.val() as PakeSnapshot;
+
+    // handshakes
+    expect(typeof pake.owner?.msg_b64).toBe('string');
+    expect(typeof pake.owner?.nonce_b64).toBe('string');
+    expect(typeof pake.guest?.msg_b64).toBe('string');
+    expect(typeof pake.guest?.nonce_b64).toBe('string');
+
+    // macs
+    expect(typeof pake.mac?.owner?.mac_b64).toBe('string');
+    expect(typeof pake.mac?.guest?.mac_b64).toBe('string');
+    expect(pake.mac.owner.mac_b64).not.toBe(pake.mac.guest.mac_b64); // метки A/B различны
+
+    // статус
+    expect(pake.status?.ok).toBe(true);
+
+    //viewModel
+    // Флаги пайплайна
+    expect(cVM.isRoomCreated()).toBe(true);
+    expect(jVM.isRoomCreated()).toBe(true);
+
+    expect(cVM.isRtcReady()).toBe(true);
+    expect(jVM.isRtcReady()).toBe(true);
+
+    expect(cVM.isCleanupDone()).toBe(true);
+    expect(jVM.isCleanupDone()).toBe(true);
+
+    // // Auth IDs заданы и отличаются
+    // expect(typeof cVM.authId()).toBe('string');
+    // expect(typeof jVM.authId()).toBe('string');
+    // expect(cVM.authId()).not.toBe(jVM.authId());
+
+    // Секрет прокинут во VM
+    expect(cVM.secret()).toBe(secret);
+    expect(jVM.secret()).toBe(secret);
+
+    // SAS: 6 цифр и совпадают
+    expect(cVM.sas()).toMatch(SIX_DIGIT_REGEX);
+    expect(jVM.sas()).toMatch(SIX_DIGIT_REGEX);
+    expect(cVM.sas()).toBe(jVM.sas());
 
     expect(errors).toHaveLength(0);
 

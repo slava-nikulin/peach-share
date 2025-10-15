@@ -70,12 +70,6 @@ export const roomInitFSM: AnyStateMachine = setup({
         return { pakeKey: enc_key, sas };
       },
     ),
-    sas: fromPromise(async () => {
-      console.log('pake session(sas)');
-      await delay(2000);
-      const sas = 'sas';
-      return { sas };
-    }),
     rtc: fromPromise(async () => {
       console.log('rtc');
       await delay(2000);
@@ -135,7 +129,6 @@ export const roomInitFSM: AnyStateMachine = setup({
     }),
     vmRoomReady: () => {},
     vmPakeDone: () => {},
-    vmSasDone: () => {},
     vmRtcDone: () => {},
     vmCleanupDone: () => {},
     captureError: () => {},
@@ -213,15 +206,7 @@ export const roomInitFSM: AnyStateMachine = setup({
           room: requireRoom(context),
           secret: context.secret,
         }),
-        onDone: { target: 'sas', actions: ['vmPakeDone', 'setPakeResult'] },
-        onError: { target: '#room-fsm.failed', actions: 'captureError' },
-      },
-    },
-    sas: {
-      tags: ['sas'],
-      invoke: {
-        src: 'sas',
-        onDone: { target: 'rtc', actions: 'vmSasDone' },
+        onDone: { target: 'rtc', actions: ['vmPakeDone', 'setPakeResult'] },
         onError: { target: '#room-fsm.failed', actions: 'captureError' },
       },
     },

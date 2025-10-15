@@ -5,12 +5,15 @@ import { roomInitFSM } from '../../room-fsm';
 import type { RoomRecord } from '../../types';
 
 describe('room-fsm component tests', () => {
-  it('happy path (create): auth → create → pake → sas → rtc → cleanup → done', async () => {
+  const enc32 = (v: number = 7): Uint8Array => new Uint8Array(32).fill(v);
+
+  it('happy path (create): auth → create → pake → rtc → cleanup → done', async () => {
     const seen: string[] = [];
     const called = {
       createRoom: vi.fn(),
       joinRoom: vi.fn(),
       vmRoomReady: vi.fn(),
+      vmPakeDone: vi.fn(),
     };
 
     const roomMock: RoomRecord = {
@@ -33,13 +36,14 @@ describe('room-fsm component tests', () => {
           called.joinRoom();
           return { roomReady: true, room: roomMock };
         }),
-        pake: fromPromise(async () => ({ pakeKey: 'k' })),
-        sas: fromPromise(async () => ({ sas: '123' })),
+        // ВАЖНО: pakeKey как Uint8Array, sas строка
+        pake: fromPromise(async () => ({ pakeKey: enc32(1), sas: '123456' })),
         rtc: fromPromise(async () => ({ rtcReady: true })),
         cleanup: fromPromise(async () => ({ cleanupDone: true })),
       },
       actions: {
         vmRoomReady: () => called.vmRoomReady(),
+        vmPakeDone: () => called.vmPakeDone(),
       },
     });
 
@@ -63,24 +67,33 @@ describe('room-fsm component tests', () => {
     actor.start();
     await completion;
 
-    expect(actor.getSnapshot().status).toBe('done');
-    expect(actor.getSnapshot().context.authId).toBe('auth_uid');
-    expect(seen).toContain('creating');
-    expect(seen).toEqual(expect.arrayContaining(['pake', 'sas', 'rtc', 'cleanup']));
+    const snap = actor.getSnapshot();
+    expect(snap.status).toBe('done');
+    expect(snap.context.authId).toBe('auth_uid');
+    expect(seen).toEqual(expect.arrayContaining(['creating', 'pake', 'rtc', 'cleanup']));
     expect(called.createRoom).toHaveBeenCalledWith({ roomId: 'r1', authId: 'auth_uid' });
     expect(called.joinRoom).not.toHaveBeenCalled();
     expect(called.vmRoomReady).toHaveBeenCalledTimes(1);
 
-    // проверяем setRoom
-    expect(actor.getSnapshot().context.room).toEqual(roomMock);
+    // setRoom
+    expect(snap.context.room).toEqual(roomMock);
+
+    // setPakeResult: encKey и sas в контексте
+    expect(snap.context.encKey).toBeInstanceOf(Uint8Array);
+    expect((snap.context.encKey as Uint8Array).length).toBe(32);
+    expect(snap.context.sas).toBe('123456');
+    expect(called.vmPakeDone).toHaveBeenCalledTimes(1);
+
+    actor.stop();
   });
 
-  it('happy path (join): auth → join → pake → sas → rtc → cleanup → done', async () => {
+  it('happy path (join): auth → join → pake → rtc → cleanup → done', async () => {
     const seen: string[] = [];
     const called = {
       createRoom: vi.fn(),
       joinRoom: vi.fn(),
       vmRoomReady: vi.fn(),
+      vmPakeDone: vi.fn(),
     };
 
     const roomMock: RoomRecord = {
@@ -102,12 +115,14 @@ describe('room-fsm component tests', () => {
           called.joinRoom(input);
           return { roomReady: true, room: roomMock };
         }),
-        pake: fromPromise(async () => ({ pakeKey: 'k' })),
-        sas: fromPromise(async () => ({ sas: '123' })),
+        pake: fromPromise(async () => ({ pakeKey: enc32(2), sas: '654321' })),
         rtc: fromPromise(async () => ({ rtcReady: true })),
         cleanup: fromPromise(async () => ({ cleanupDone: true })),
       },
-      actions: { vmRoomReady: () => called.vmRoomReady() },
+      actions: {
+        vmRoomReady: () => called.vmRoomReady(),
+        vmPakeDone: () => called.vmPakeDone(),
+      },
     });
 
     const actor = createActor(fsm, { input: { roomId: 'r2', intent: 'join', secret: 's' } });
@@ -117,7 +132,6 @@ describe('room-fsm component tests', () => {
         s.tags.forEach((t) => {
           seen.push(t);
         });
-
         if (s.status === 'done') {
           sub.unsubscribe();
           resolve();
@@ -131,15 +145,23 @@ describe('room-fsm component tests', () => {
     actor.start();
     await completion;
 
-    expect(actor.getSnapshot().status).toBe('done');
-    expect(actor.getSnapshot().context.authId).toBe('auth_uid');
-    expect(seen).toContain('joining');
-    expect(seen).toEqual(expect.arrayContaining(['pake', 'sas', 'rtc', 'cleanup']));
+    const snap = actor.getSnapshot();
+    expect(snap.status).toBe('done');
+    expect(snap.context.authId).toBe('auth_uid');
+    expect(seen).toEqual(expect.arrayContaining(['joining', 'pake', 'rtc', 'cleanup']));
     expect(called.joinRoom).toHaveBeenCalledWith({ roomId: 'r2', authId: 'auth_uid' });
     expect(called.createRoom).not.toHaveBeenCalled();
     expect(called.vmRoomReady).toHaveBeenCalledTimes(1);
 
-    // проверяем setRoom
-    expect(actor.getSnapshot().context.room).toEqual(roomMock);
+    // setRoom
+    expect(snap.context.room).toEqual(roomMock);
+
+    // setPakeResult
+    expect(snap.context.encKey).toBeInstanceOf(Uint8Array);
+    expect((snap.context.encKey as Uint8Array).length).toBe(32);
+    expect(snap.context.sas).toBe('654321');
+    expect(called.vmPakeDone).toHaveBeenCalledTimes(1);
+
+    actor.stop();
   });
 });
