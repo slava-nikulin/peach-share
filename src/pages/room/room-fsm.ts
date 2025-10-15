@@ -10,8 +10,8 @@ import {
 import { delay } from '../../util/time';
 import { anonAuth } from './fsm-actors/auth';
 import { createRoom } from './fsm-actors/create-room';
+import { startDH } from './fsm-actors/dh';
 import { joinRoom } from './fsm-actors/join-room';
-import { startPakeSession } from './fsm-actors/pake';
 import type { Intent, RoomRecord } from './types';
 
 interface Input extends Record<string, unknown> {
@@ -55,19 +55,18 @@ export const roomInitFSM: AnyStateMachine = setup({
       const room = await joinRoom(input);
       return { roomReady: true, room: room };
     }),
-    pake: fromPromise(
+    dh: fromPromise(
       async ({ input }: { input: { room: RoomRecord; intent: Intent; secret: string } }) => {
         const role = input.intent === 'create' ? 'owner' : 'guest';
-        const { enc_key, sas } = await startPakeSession({
+        const { enc_key, sas } = await startDH({
           roomId: input.room.room_id,
           role,
           sharedS: input.secret,
           timeoutMs: undefined,
-          engine: undefined,
           sasDigits: undefined,
           context: undefined,
         });
-        return { pakeKey: enc_key, sas };
+        return { encKey: enc_key, sas };
       },
     ),
     rtc: fromPromise(async () => {
@@ -112,23 +111,23 @@ export const roomInitFSM: AnyStateMachine = setup({
       }
       return {};
     }),
-    setPakeResult: assign(({ event }: { context: Ctx; event: AnyEventObject }) => {
-      const doneEvent = event as DoneActorEvent<{ pakeKey?: Uint8Array; sas?: string }>;
+    setDHResult: assign(({ event }: { context: Ctx; event: AnyEventObject }) => {
+      const doneEvent = event as DoneActorEvent<{ encKey?: Uint8Array; sas?: string }>;
 
       const { output } = doneEvent;
       if (
         typeof output === 'object' &&
         output !== null &&
-        'pakeKey' in output &&
-        typeof output.pakeKey === 'object' &&
-        output.pakeKey !== null
+        'encKey' in output &&
+        typeof output.encKey === 'object' &&
+        output.encKey !== null
       ) {
-        return { encKey: doneEvent.output.pakeKey as Uint8Array, sas: doneEvent.output.sas };
+        return { encKey: doneEvent.output.encKey as Uint8Array, sas: doneEvent.output.sas };
       }
       return {};
     }),
     vmRoomReady: () => {},
-    vmPakeDone: () => {},
+    vmDHDone: () => {},
     vmRtcDone: () => {},
     vmCleanupDone: () => {},
     captureError: () => {},
@@ -190,13 +189,12 @@ export const roomInitFSM: AnyStateMachine = setup({
 
         done: { type: 'final' },
       },
-      // Дальше по пайплайну (pake/sas/rtc) по желанию
-      onDone: 'pake',
+      onDone: 'dh',
     },
-    pake: {
-      tags: ['pake'],
+    dh: {
+      tags: ['dh'],
       invoke: {
-        src: 'pake',
+        src: 'dh',
         input: ({
           context,
         }: {
@@ -206,7 +204,7 @@ export const roomInitFSM: AnyStateMachine = setup({
           room: requireRoom(context),
           secret: context.secret,
         }),
-        onDone: { target: 'rtc', actions: ['vmPakeDone', 'setPakeResult'] },
+        onDone: { target: 'rtc', actions: ['vmDHDone', 'setDHResult'] },
         onError: { target: '#room-fsm.failed', actions: 'captureError' },
       },
     },

@@ -22,7 +22,7 @@ export function startRoomFlow(
         vm.setAuthId(event.output.authId);
       },
       vmRoomReady: () => vm.setRoomCreated(true),
-      vmPakeDone: ({ event }: { event: DoneActorEvent<{ pakeKey: string; sas: string }> }) => {
+      vmDHDone: ({ event }: { event: DoneActorEvent<{ encKey: string; sas: string }> }) => {
         vm.setSas(event.output.sas);
       },
       vmRtcDone: () => vm.setRtcReady(true),

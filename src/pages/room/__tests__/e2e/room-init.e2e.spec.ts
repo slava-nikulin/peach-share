@@ -1,5 +1,6 @@
 import { type Database, get, ref, remove } from 'firebase/database';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { toBase64Url } from '../../../../lib/crypto';
 import { setupFirebaseTestEnv } from '../../../../tests/helpers/env';
 import { startEmu, stopEmu } from '../../../../tests/helpers/firebase-emu';
 import type { RoomInitActor } from '../../room-fsm';
@@ -7,7 +8,7 @@ import type { RoomRecord } from '../../types';
 
 type StartRoomFlow = typeof import('../../room-init').startRoomFlow;
 type RoomInitSnapshot = ReturnType<RoomInitActor['getSnapshot']>;
-interface PakeSnapshot {
+interface DHSnapshot {
   owner: { msg_b64: string; nonce_b64: string };
   guest: { msg_b64: string; nonce_b64: string };
   mac: {
@@ -20,17 +21,23 @@ interface PakeSnapshot {
 const SIX_DIGIT_REGEX = /^\d{6}$/;
 
 const untilDone = (actor: RoomInitActor, timeoutMs: number = 120_000): Promise<void> =>
-  new Promise<void>((res, rej) => {
+  new Promise((res, rej) => {
     let timer: ReturnType<typeof setTimeout>;
-    const subscription = actor.subscribe((state: RoomInitSnapshot) => {
-      if (state.status === 'done') {
+    const sub = actor.subscribe((s: RoomInitSnapshot) => {
+      if (s.status === 'done') {
         clearTimeout(timer);
-        subscription.unsubscribe();
+        sub.unsubscribe();
         res();
+      }
+      // Ловим fail немедленно
+      else if (s.matches?.('failed') || s.status === 'error') {
+        clearTimeout(timer);
+        sub.unsubscribe();
+        rej(new Error('actor_failed'));
       }
     });
     timer = setTimeout(() => {
-      subscription.unsubscribe();
+      sub.unsubscribe();
       rej(new Error('timeout: actor did not reach done'));
     }, timeoutMs);
   });
@@ -79,7 +86,7 @@ describe('room init e2e (concurrent)', () => {
     const roomId = `room-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
     createdRoomIds.push(roomId);
 
-    const secret = 'e2e-secret';
+    const secret = toBase64Url(new Uint8Array(32).fill(7));
     const errors: string[] = [];
     const onErr = (m: string | null): void => {
       if (m) errors.push(m);
@@ -110,7 +117,7 @@ describe('room init e2e (concurrent)', () => {
     expect(stored?.room_id).toBe(roomId);
     expect(stored?.owner).toBe(cRoom.owner);
 
-    // --- PAKE: проверяем результат в контексте
+    // --- DH: проверяем результат в контексте
     expect(cCtx.encKey).toBeDefined();
     expect(jCtx.encKey).toBeDefined();
     expect(Array.from(cCtx.encKey as Uint8Array)).toEqual(Array.from(jCtx.encKey as Uint8Array));
@@ -121,26 +128,26 @@ describe('room init e2e (concurrent)', () => {
     expect(cCtx.sas).toMatch(SIX_DIGIT_REGEX);
     expect(cCtx.sas).toBe(jCtx.sas);
 
-    // --- PAKE: проверяем артефакты в RTDB
-    const pakePath = `rooms/${roomId}/pake`;
-    const pakeSnap = await get(ref(db, pakePath));
-    expect(pakeSnap.exists()).toBe(true);
+    // --- DH: проверяем артефакты в RTDB
+    const dhPath = `rooms/${roomId}/dh`;
+    const dhSnap = await get(ref(db, dhPath));
+    expect(dhSnap.exists()).toBe(true);
 
-    const pake = pakeSnap.val() as PakeSnapshot;
+    const dh = dhSnap.val() as DHSnapshot;
 
     // handshakes
-    expect(typeof pake.owner?.msg_b64).toBe('string');
-    expect(typeof pake.owner?.nonce_b64).toBe('string');
-    expect(typeof pake.guest?.msg_b64).toBe('string');
-    expect(typeof pake.guest?.nonce_b64).toBe('string');
+    expect(typeof dh.owner?.msg_b64).toBe('string');
+    expect(typeof dh.owner?.nonce_b64).toBe('string');
+    expect(typeof dh.guest?.msg_b64).toBe('string');
+    expect(typeof dh.guest?.nonce_b64).toBe('string');
 
     // macs
-    expect(typeof pake.mac?.owner?.mac_b64).toBe('string');
-    expect(typeof pake.mac?.guest?.mac_b64).toBe('string');
-    expect(pake.mac.owner.mac_b64).not.toBe(pake.mac.guest.mac_b64); // метки A/B различны
+    expect(typeof dh.mac?.owner?.mac_b64).toBe('string');
+    expect(typeof dh.mac?.guest?.mac_b64).toBe('string');
+    expect(dh.mac.owner.mac_b64).not.toBe(dh.mac.guest.mac_b64); // метки A/B различны
 
     // статус
-    expect(pake.status?.ok).toBe(true);
+    expect(dh.status?.ok).toBe(true);
 
     //viewModel
     // Флаги пайплайна

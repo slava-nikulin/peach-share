@@ -5,31 +5,31 @@ import { bytesEq, toBase64Url } from '../../../../lib/crypto';
 import { setupFirebaseTestEnv } from '../../../../tests/helpers/env';
 import { startEmu, stopEmu } from '../../../../tests/helpers/firebase-emu';
 
-interface PakeParticipantSnapshot {
+interface DHParticipantSnapshot {
   msg_b64: string;
   nonce_b64: string;
 }
 
-interface PakeMacSnapshot {
+interface DHMacSnapshot {
   mac_b64: string;
 }
 
-interface PakeSnapshot {
-  owner?: PakeParticipantSnapshot;
-  guest?: PakeParticipantSnapshot;
+interface DHSnapshot {
+  owner?: DHParticipantSnapshot;
+  guest?: DHParticipantSnapshot;
   mac?: {
-    owner?: PakeMacSnapshot;
-    guest?: PakeMacSnapshot;
+    owner?: DHMacSnapshot;
+    guest?: DHMacSnapshot;
   };
   status?: { ok?: boolean };
 }
 
-interface PakeStatusSnapshot {
+interface DHStatusSnapshot {
   error?: 'mac_mismatch' | 'peer_mac_timeout';
 }
 
 const SIX_DIGIT_REGEX = /^\d{6}$/;
-const PAKE_ERROR_REGEX = /mac_mismatch|peer_mac_timeout/;
+const DH_ERROR_REGEX = /mac_mismatch|peer_mac_timeout/;
 const PEER_TIMEOUT_REGEX = /peer_timeout/;
 
 const toErrorMessage = (reason: unknown): string => {
@@ -38,11 +38,11 @@ const toErrorMessage = (reason: unknown): string => {
   return String(reason);
 };
 
-describe('startPakeSession integration', () => {
+describe('startDH integration', () => {
   let db: Database;
   let emu: Awaited<ReturnType<typeof startEmu>>;
   let cleanupEnv: { restore: () => void };
-  let startPakeSession: typeof import('../../fsm-actors/pake').startPakeSession;
+  let startDH: typeof import('../../fsm-actors/dh').startDH;
 
   beforeAll(async () => {
     emu = await startEmu();
@@ -53,7 +53,7 @@ describe('startPakeSession integration', () => {
     });
 
     ({ db } = await import('../../config/firebase'));
-    ({ startPakeSession } = await import('../../fsm-actors/pake'));
+    ({ startDH } = await import('../../fsm-actors/dh'));
   }, 240_000);
 
   afterAll(async () => {
@@ -62,13 +62,13 @@ describe('startPakeSession integration', () => {
   });
 
   it('owner & guest получают одинаковые enc_key и SAS; артефакты в RTDB на месте', async () => {
-    const roomId = `pake-${Date.now()}`;
+    const roomId = `dh-${Date.now()}`;
     // фиксированный S для детерминированного SAS
     const sharedS = toBase64Url(new Uint8Array(32).fill(1));
 
     const [owner, guest] = await Promise.all([
-      startPakeSession({ roomId, role: 'owner', sharedS, timeoutMs: 10_000 }),
-      startPakeSession({ roomId, role: 'guest', sharedS, timeoutMs: 10_000 }),
+      startDH({ roomId, role: 'owner', sharedS, timeoutMs: 10_000 }),
+      startDH({ roomId, role: 'guest', sharedS, timeoutMs: 10_000 }),
     ]);
 
     // ключи одинаковы
@@ -79,38 +79,38 @@ describe('startPakeSession integration', () => {
     expect(guest.sas).toBe(owner.sas);
 
     // артефакты в RTDB
-    const snap = await get(ref(db, `rooms/${roomId}/pake`));
+    const snap = await get(ref(db, `rooms/${roomId}/dh`));
     expect(snap.exists()).toBe(true);
-    const pake = snap.val() as PakeSnapshot;
-    expect(typeof pake.owner?.msg_b64).toBe('string');
-    expect(typeof pake.owner?.nonce_b64).toBe('string');
-    expect(typeof pake.guest?.msg_b64).toBe('string');
-    expect(typeof pake.guest?.nonce_b64).toBe('string');
-    expect(typeof pake.mac?.owner?.mac_b64).toBe('string');
-    expect(typeof pake.mac?.guest?.mac_b64).toBe('string');
-    expect(pake.status?.ok).toBe(true);
+    const dh = snap.val() as DHSnapshot;
+    expect(typeof dh.owner?.msg_b64).toBe('string');
+    expect(typeof dh.owner?.nonce_b64).toBe('string');
+    expect(typeof dh.guest?.msg_b64).toBe('string');
+    expect(typeof dh.guest?.nonce_b64).toBe('string');
+    expect(typeof dh.mac?.owner?.mac_b64).toBe('string');
+    expect(typeof dh.mac?.guest?.mac_b64).toBe('string');
+    expect(dh.status?.ok).toBe(true);
 
     await remove(ref(db, `rooms/${roomId}`));
   }, 60_000);
 
   it('mac_mismatch при разных секретах', async () => {
-    const roomId = `pake-${Date.now()}-bad`;
+    const roomId = `dh-${Date.now()}-bad`;
     const sA = toBase64Url(new Uint8Array(32).fill(2));
     const sB = toBase64Url(new Uint8Array(32).fill(3));
 
     const res = await Promise.allSettled([
-      startPakeSession({ roomId, role: 'owner', sharedS: sA, timeoutMs: 8_000 }),
-      startPakeSession({ roomId, role: 'guest', sharedS: sB, timeoutMs: 8_000 }),
+      startDH({ roomId, role: 'owner', sharedS: sA, timeoutMs: 8_000 }),
+      startDH({ roomId, role: 'guest', sharedS: sB, timeoutMs: 8_000 }),
     ]);
 
     // хотя бы один упал с mac_mismatch
     expect(
-      res.some((r) => r.status === 'rejected' && PAKE_ERROR_REGEX.test(toErrorMessage(r.reason))),
+      res.some((r) => r.status === 'rejected' && DH_ERROR_REGEX.test(toErrorMessage(r.reason))),
     ).toBe(true);
 
-    const snap = await get(ref(db, `rooms/${roomId}/pake/status`));
+    const snap = await get(ref(db, `rooms/${roomId}/dh/status`));
     if (snap.exists()) {
-      const status = snap.val() as PakeStatusSnapshot;
+      const status = snap.val() as DHStatusSnapshot;
       if (status.error) {
         expect(['mac_mismatch', 'peer_mac_timeout']).toContain(status.error);
       }
@@ -119,11 +119,11 @@ describe('startPakeSession integration', () => {
   }, 60_000);
 
   it('peer_timeout если второй участник не пришёл', async () => {
-    const roomId = `pake-${Date.now()}-timeout`;
+    const roomId = `dh-${Date.now()}-timeout`;
     const sharedS = toBase64Url(new Uint8Array(32).fill(4));
-    await expect(
-      startPakeSession({ roomId, role: 'owner', sharedS, timeoutMs: 2_000 }),
-    ).rejects.toThrow(PEER_TIMEOUT_REGEX);
+    await expect(startDH({ roomId, role: 'owner', sharedS, timeoutMs: 2_000 })).rejects.toThrow(
+      PEER_TIMEOUT_REGEX,
+    );
     await remove(ref(db, `rooms/${roomId}`));
   }, 20_000);
 });

@@ -124,7 +124,7 @@ export function ascii(s: string): Uint8Array {
   }
   return bytes;
 }
-function concatBytes(...parts: Uint8Array[]): Uint8Array {
+export function concatBytes(...parts: Uint8Array[]): Uint8Array {
   const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
   const result = new Uint8Array(totalLength);
   let offset = 0;

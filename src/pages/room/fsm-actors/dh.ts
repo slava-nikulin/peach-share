@@ -3,11 +3,10 @@ import { child, off, onValue, ref, runTransaction, update } from 'firebase/datab
 import {
   ascii,
   bytesEq,
-  devDummyPakeEngine,
+  concatBytes,
   fromBase64Url,
   hkdf,
   hmacSHA256,
-  type PakeEngine,
   sha256,
   toBase64Url,
   utf8,
@@ -15,105 +14,102 @@ import {
 import { db } from '../config/firebase';
 import type { Role } from '../types';
 
-type RoleKey = 'owner' | 'guest';
-
 interface SessionContext {
   role: Role;
-  sharedSecret: Uint8Array;
+  dhSecret: Uint8Array;
   pathId: string;
-  pakeRef: DatabaseReference;
-  meKey: RoleKey;
-  peerKey: RoleKey;
+  dhRef: DatabaseReference;
+  meKey: Role;
+  peerKey: Role;
   timeoutMs: number;
-  engine: PakeEngine;
   sasDigits: number;
   context: string;
 }
 
 interface HandshakeState {
-  localMsg: Uint8Array;
-  state: unknown;
+  localMsg: Uint8Array; // публичный ключ ECDH (RAW, 65 байт)
+  priv: CryptoKey; // приватный ключ ECDH (non-extractable)
   nonceA: Uint8Array | null;
   nonceB: Uint8Array | null;
 }
 
 interface PeerArtifacts {
-  peerMsg: Uint8Array;
+  peerMsg: Uint8Array; // публичный ключ пира (RAW)
   peerNonce: Uint8Array;
 }
 
 interface DerivedKeys {
-  sessionKey: Uint8Array;
+  sessionKey: Uint8Array; // SK
   encKey: Uint8Array;
   macKey: Uint8Array;
   nonceA: Uint8Array;
   nonceB: Uint8Array;
 }
 
-export async function startPakeSession(input: {
+export async function startDH(input: {
   roomId: string;
   role: Role;
-  sharedS: string;
+  sharedS: string; // base64url 32B
   timeoutMs?: number;
-  engine?: PakeEngine;
   sasDigits?: number;
   context?: string;
 }): Promise<{ enc_key: Uint8Array; sas: string }> {
-  const ctx = buildSessionContext(input);
+  const ctx = await buildSessionContext(input);
   const handshake = await initiateHandshake(ctx);
   await publishLocalHandshake(ctx, handshake);
   const peer = await waitPeerArtifacts(ctx);
   const keys = await deriveSessionKeys(ctx, handshake, peer);
   await publishMacAndVerify(ctx, keys);
-  await update(child(ctx.pakeRef, 'status'), { ok: true, at: Date.now() });
+  await update(child(ctx.dhRef, 'status'), { ok: true, at: Date.now() });
   const sas = await makeSAS(keys.sessionKey, ctx.context, ctx.sasDigits);
   return { enc_key: keys.encKey, sas };
 }
 
-function buildSessionContext(input: {
+async function buildSessionContext(input: {
   roomId: string;
   role: Role;
   sharedS: string;
   timeoutMs?: number;
-  engine?: PakeEngine;
   sasDigits?: number;
   context?: string;
-}): SessionContext {
-  const {
-    roomId,
-    role,
-    sharedS,
-    timeoutMs = 20_000,
-    engine = devDummyPakeEngine,
-    sasDigits = 6,
-    context = 'default',
-  } = input;
-  const pathId = `rooms/${roomId}/pake`;
-  const pakeRef = ref(db, pathId);
-  const meKey: RoleKey = role === 'owner' ? 'owner' : 'guest';
-  const peerKey: RoleKey = role === 'owner' ? 'guest' : 'owner';
+}): Promise<SessionContext> {
+  const { roomId, role, sharedS, timeoutMs = 20_000, sasDigits = 6, context = 'default' } = input;
+
+  const pathId = `rooms/${roomId}/dh`;
+  const dhRef = ref(db, pathId);
+  const meKey: Role = role === 'owner' ? 'owner' : 'guest';
+  const peerKey: Role = role === 'owner' ? 'guest' : 'owner';
+
   const sharedSecret = fromBase64Url(sharedS);
+  if (sharedSecret.length !== 32) throw new Error('bad_psk');
+
+  const dhSecret = await hkdf(sharedSecret, null, utf8('dh'), 32);
+
   return {
     role,
-    sharedSecret,
+    dhSecret: dhSecret,
     pathId,
-    pakeRef,
+    dhRef: dhRef,
     meKey,
     peerKey,
     timeoutMs,
-    engine,
     sasDigits,
     context,
   };
 }
 
 async function initiateHandshake(ctx: SessionContext): Promise<HandshakeState> {
-  const pakeSecret = await hkdf(ctx.sharedSecret, null, utf8('pake'), 32);
+  // Эфемерный ECDH на P-256
+  const kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, false, [
+    'deriveBits',
+  ]);
+  const pubRaw = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey)); // 65B
+
   const nonce = crypto.getRandomValues(new Uint8Array(16));
-  const { localMsg, state } = await ctx.engine.start({ role: ctx.role, pakeSecret });
+
   return {
-    localMsg,
-    state,
+    localMsg: pubRaw,
+    priv: kp.privateKey,
     nonceA: ctx.role === 'owner' ? nonce : null,
     nonceB: ctx.role === 'guest' ? nonce : null,
   };
@@ -123,16 +119,16 @@ async function publishLocalHandshake(
   ctx: SessionContext,
   handshake: HandshakeState,
 ): Promise<void> {
-  const targetRef = child(ctx.pakeRef, ctx.meKey);
+  const targetRef = child(ctx.dhRef, ctx.meKey);
   const nonce = getNonceForRole(handshake, ctx.role);
-  interface PakeHandshakeRecord {
+  interface DhHandshakeRecord {
     msg_b64: string;
     nonce_b64: string;
     at: number;
   }
   await runTransaction(
     targetRef,
-    (current: PakeHandshakeRecord | null) => {
+    (current: DhHandshakeRecord | null) => {
       if (current) return current;
       return {
         msg_b64: toBase64Url(handshake.localMsg),
@@ -145,7 +141,7 @@ async function publishLocalHandshake(
 }
 
 async function waitPeerArtifacts(ctx: SessionContext): Promise<PeerArtifacts> {
-  return waitPeerWithTimeout({ ref: child(ctx.pakeRef, ctx.peerKey), timeoutMs: ctx.timeoutMs });
+  return waitPeerWithTimeout({ ref: child(ctx.dhRef, ctx.peerKey), timeoutMs: ctx.timeoutMs });
 }
 
 async function deriveSessionKeys(
@@ -153,15 +149,34 @@ async function deriveSessionKeys(
   handshake: HandshakeState,
   peer: PeerArtifacts,
 ): Promise<DerivedKeys> {
-  const { spakeOut } = await ctx.engine.finish({ state: handshake.state, peerMsg: peer.peerMsg });
+  // Импорт публичного ключа пира
+  const peerPub = await crypto.subtle.importKey(
+    'raw',
+    toArrayBuffer(peer.peerMsg),
+    { name: 'ECDH', namedCurve: 'P-256' },
+    false,
+    [],
+  );
+  // Общий секрет K (32 байта)
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'ECDH', public: peerPub },
+    handshake.priv,
+    256,
+  );
+  const K = new Uint8Array(bits);
+
   const nonceA = ctx.role === 'owner' ? getNonceForRole(handshake, ctx.role) : peer.peerNonce;
   const nonceB = ctx.role === 'guest' ? getNonceForRole(handshake, ctx.role) : peer.peerNonce;
-  const ikmSK = concatBytes(spakeOut, ctx.sharedSecret, nonceA, nonceB, utf8(ctx.pathId));
-  const sessionKey = await hkdf(ikmSK, null, utf8('SK'), 32);
+
+  // Transcript + ключевой граф
+  const transcript = await sha256(concatBytes(utf8(ctx.pathId), nonceA, nonceB, utf8('v1')));
+  const sessionKey = await hkdf(K, ctx.dhSecret, transcript, 32);
+
   const [encKey, macKey] = await Promise.all([
     hkdf(sessionKey, null, utf8('enc'), 32),
     hkdf(sessionKey, null, utf8('mac'), 32),
   ]);
+
   return { sessionKey, encKey, macKey, nonceA, nonceB };
 }
 
@@ -170,28 +185,29 @@ async function publishMacAndVerify(ctx: SessionContext, keys: DerivedKeys): Prom
   const peerLabel = ctx.role === 'owner' ? 'B' : 'A';
   const nonceA = toBase64Url(keys.nonceA);
   const nonceB = toBase64Url(keys.nonceB);
-  const messageBase = `${ctx.pathId}|${nonceA}|${nonceB}`;
+  const messageBase = `${ctx.pathId}|${nonceA}|${nonceB}|owner|guest|v1`;
+
   const macSelf = await hmacSHA256(keys.macKey, ascii(`${label}|${messageBase}`));
-  await update(child(ctx.pakeRef, `mac/${ctx.meKey}`), {
+  await update(child(ctx.dhRef, `mac/${ctx.meKey}`), {
     mac_b64: toBase64Url(macSelf),
     at: Date.now(),
   });
+
   const macPeer = await waitMacWithTimeout({
-    ref: child(ctx.pakeRef, `mac/${ctx.peerKey}`),
+    ref: child(ctx.dhRef, `mac/${ctx.peerKey}`),
     timeoutMs: ctx.timeoutMs,
   });
+
   const macPeerExpected = await hmacSHA256(keys.macKey, ascii(`${peerLabel}|${messageBase}`));
   if (!bytesEq(macPeer, macPeerExpected)) {
-    await update(child(ctx.pakeRef, 'status'), { error: 'mac_mismatch', at: Date.now() });
+    await update(child(ctx.dhRef, 'status'), { error: 'mac_mismatch', at: Date.now() });
     throw new Error('mac_mismatch');
   }
 }
 
 function getNonceForRole(handshake: HandshakeState, role: Role): Uint8Array {
   const nonce = role === 'owner' ? handshake.nonceA : handshake.nonceB;
-  if (!nonce) {
-    throw new Error('nonce not initialised for role');
-  }
+  if (!nonce) throw new Error('nonce not initialised for role');
   return nonce;
 }
 
@@ -211,7 +227,6 @@ async function waitPeerWithTimeout(args: { ref: DatabaseReference; timeoutMs: nu
         const v = snap.val();
         if (v?.msg_b64 && v?.nonce_b64) {
           clearTimeout(t);
-          off(r);
           resolve({
             peerMsg: fromBase64Url(v.msg_b64),
             peerNonce: fromBase64Url(v.nonce_b64),
@@ -244,7 +259,6 @@ async function waitMacWithTimeout(args: {
         const v = snap.val();
         if (v?.mac_b64) {
           clearTimeout(t);
-          off(r);
           resolve(fromBase64Url(v.mac_b64));
           unsub();
         }
@@ -259,20 +273,21 @@ async function waitMacWithTimeout(args: {
 }
 
 async function makeSAS(SK: Uint8Array, context: string, digits: number): Promise<string> {
-  const h = await sha256(concatBytes(SK, utf8(context)));
-  // Берем 4 байта как uint32 и выводим как десятичный код нужной длины
-  const n = (h[0] << 24) | (h[1] << 16) | (h[2] << 8) | h[3];
+  const info = concatBytes(utf8('sas'), utf8(context));
+  const okm = await hkdf(SK, null, info, 4);
+  const n = (okm[0] << 24) | (okm[1] << 16) | (okm[2] << 8) | okm[3];
   const pos = (n >>> 0) % 10 ** digits;
   return pos.toString().padStart(digits, '0');
 }
 
-function concatBytes(...arrs: Uint8Array[]): Uint8Array {
-  const len = arrs.reduce((a, b) => a + b.length, 0);
-  const out = new Uint8Array(len);
-  let off = 0;
-  for (const a of arrs) {
-    out.set(a, off);
-    off += a.length;
+// WebCrypto требует ArrayBuffer (не SharedArrayBuffer)
+function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
+  if (
+    u8.buffer instanceof ArrayBuffer &&
+    u8.byteOffset === 0 &&
+    u8.byteLength === u8.buffer.byteLength
+  ) {
+    return u8.buffer;
   }
-  return out;
+  return u8.slice().buffer;
 }
