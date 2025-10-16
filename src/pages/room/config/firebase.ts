@@ -78,16 +78,6 @@ if (IN_EMU) {
   // Явно фиксируем ns и хост эмулятора
   _db = getDatabase(app, `http://${host}:${port}?ns=${ns}`);
   connectDatabaseEmulator(_db, host, port);
-
-  if (import.meta.env.DEV) {
-    console.log('[EMU] mode=', import.meta.env.MODE, 'flags:', {
-      USE_EMU,
-      OFFLINE,
-      IN_EMU,
-      EMU_AUTH,
-    });
-    console.log('[EMU] RTDB target =', ref(_db, '/').toString());
-  }
 } else {
   _db = getDatabase(app);
 }

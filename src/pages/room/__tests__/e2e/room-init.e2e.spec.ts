@@ -1,8 +1,9 @@
 import { type Database, get, ref, remove } from 'firebase/database';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { toBase64Url } from '../../../../lib/crypto';
-import { setupFirebaseTestEnv } from '../../../../tests/helpers/env';
-import { startEmu, stopEmu } from '../../../../tests/helpers/firebase-emu';
+import type { RtcEndpoint } from '../../../../lib/webrtc';
+import { setupTestEnv } from '../../../../tests/setup/env';
+import { startEmu, stopEmu } from '../../../../tests/setup/testcontainers';
 import type { RoomInitActor } from '../../room-fsm';
 import type { RoomRecord } from '../../types';
 
@@ -19,21 +20,40 @@ interface DHSnapshot {
 }
 
 const SIX_DIGIT_REGEX = /^\d{6}$/;
+const NON_EMPTY_REGEX = /\S/;
+
+const timeout = (label: string, ms: number): Promise<never> =>
+  new Promise<never>((_, reject) => {
+    const timer = setTimeout(() => {
+      clearTimeout(timer);
+      reject(new Error(label));
+    }, ms);
+  });
+
+const withTimeout = <T>(promise: Promise<T>, label: string, ms: number = 10_000): Promise<T> =>
+  Promise.race([promise, timeout(label, ms)]);
+
+interface RoomInitErrorContext {
+  lastError?: { at?: string; message?: string };
+}
 
 const untilDone = (actor: RoomInitActor, timeoutMs: number = 120_000): Promise<void> =>
   new Promise((res, rej) => {
     let timer: ReturnType<typeof setTimeout>;
-    const sub = actor.subscribe((s: RoomInitSnapshot) => {
+    const sub = actor.subscribe((s) => {
       if (s.status === 'done') {
         clearTimeout(timer);
         sub.unsubscribe();
-        res();
+        return res();
       }
-      // Ловим fail немедленно
-      else if (s.matches?.('failed') || s.status === 'error') {
+      if (s.matches?.('failed') || s.status === 'error') {
         clearTimeout(timer);
         sub.unsubscribe();
-        rej(new Error('actor_failed'));
+        const contextWithError = s.context as Partial<RoomInitErrorContext> | undefined;
+        const le = contextWithError?.lastError;
+        return rej(
+          new Error(`actor_failed at ${le?.at ?? 'unknown'}: ${le?.message ?? 'no message'}`),
+        );
       }
     });
     timer = setTimeout(() => {
@@ -59,10 +79,12 @@ describe('room init e2e (concurrent)', () => {
   beforeAll(async () => {
     vi.useRealTimers();
     emu = await startEmu();
-    cleanupEnv = setupFirebaseTestEnv({
+    cleanupEnv = setupTestEnv({
       hostname: emu.host,
       dbPort: emu.ports.db,
       authPort: emu.ports.auth,
+      stunPort: emu.ports.stun,
+      stunHost: emu.stunHost ?? emu.host,
     });
 
     vi.resetModules();
@@ -79,7 +101,9 @@ describe('room init e2e (concurrent)', () => {
 
   afterAll(async () => {
     cleanupEnv?.restore?.();
-    await stopEmu(emu.env);
+    if (emu) {
+      await stopEmu(emu);
+    }
   }, 60_000);
 
   it('create & join concurrently; both reach done; same room_id; no errors', async () => {
@@ -160,6 +184,9 @@ describe('room init e2e (concurrent)', () => {
     expect(cVM.isCleanupDone()).toBe(true);
     expect(jVM.isCleanupDone()).toBe(true);
 
+    expect(cVM.isRtcReady()).toBe(true);
+    expect(jVM.isRtcReady()).toBe(true);
+
     // // Auth IDs заданы и отличаются
     // expect(typeof cVM.authId()).toBe('string');
     // expect(typeof jVM.authId()).toBe('string');
@@ -173,6 +200,79 @@ describe('room init e2e (concurrent)', () => {
     expect(cVM.sas()).toMatch(SIX_DIGIT_REGEX);
     expect(jVM.sas()).toMatch(SIX_DIGIT_REGEX);
     expect(cVM.sas()).toBe(jVM.sas());
+
+    // --- WebRTC signaling в RTDB
+    const wrtcBase = `rooms/${roomId}/webrtc`;
+
+    // offer от owner
+    const offerOwner = await get(ref(db, `${wrtcBase}/offer/owner`));
+    expect(offerOwner.exists()).toBe(true);
+    expect(offerOwner.val()?.msg_b64).toMatch(NON_EMPTY_REGEX);
+    expect(offerOwner.val()?.nonce_b64).toMatch(NON_EMPTY_REGEX);
+
+    // answer от guest
+    const answerGuest = await get(ref(db, `${wrtcBase}/answer/guest`));
+    expect(answerGuest.exists()).toBe(true);
+    expect(answerGuest.val()?.msg_b64).toMatch(NON_EMPTY_REGEX);
+    expect(answerGuest.val()?.nonce_b64).toMatch(NON_EMPTY_REGEX);
+
+    // ICE-кандидаты обеих сторон (хватает >=1)
+    const candsOwner = await get(ref(db, `${wrtcBase}/candidates/owner`));
+    const candsGuest = await get(ref(db, `${wrtcBase}/candidates/guest`));
+    expect(candsOwner.exists()).toBe(true);
+    expect(candsGuest.exists()).toBe(true);
+    expect(Object.keys(candsOwner.val() ?? {})).not.toHaveLength(0);
+    expect(Object.keys(candsGuest.val() ?? {})).not.toHaveLength(0);
+
+    // --- WebRTC DataChannel: JSON round-trip
+    const cEp = (cCtx as { rtcEndPoint?: RtcEndpoint }).rtcEndPoint;
+    const jEp = (jCtx as { rtcEndPoint?: RtcEndpoint }).rtcEndPoint;
+
+    expect(cEp).toBeDefined();
+    expect(jEp).toBeDefined();
+    if (!cEp || !jEp) {
+      throw new Error('RTC endpoint not available');
+    }
+
+    // на всякий случай дождёмся готовности, если startRTC не делал await endpoint.ready
+    await Promise.all([cEp.ready.catch(() => {}), jEp.ready.catch(() => {})]);
+
+    const onceJSON = (ep: RtcEndpoint): Promise<unknown> =>
+      new Promise((resolve) => {
+        const unsubscribe = ep.onJSON((message) => {
+          unsubscribe();
+          resolve(message);
+        });
+      });
+
+    const payload = { t: 'ping', ts: Date.now(), from: 'creator' };
+
+    // creator -> guest
+    const recv1 = onceJSON(jEp);
+    cEp.sendJSON(payload);
+    const got1 = await withTimeout(recv1, 'dc timeout 1');
+    expect(got1).toMatchObject({ t: 'ping', from: 'creator' });
+
+    // guest -> creator
+    const recv2 = onceJSON(cEp);
+    jEp.sendJSON({ t: 'pong', ts: Date.now(), from: 'guest' });
+    const got2 = await withTimeout(recv2, 'dc timeout 2');
+    expect(got2).toMatchObject({ t: 'pong', from: 'guest' });
+
+    // бинарный кадр
+    const bin = new Uint8Array([1, 2, 3, 4]).buffer;
+    const onceBin = (ep: RtcEndpoint): Promise<ArrayBuffer> =>
+      new Promise((resolve) => {
+        const unsubscribe = ep.onBinary((buffer) => {
+          unsubscribe();
+          resolve(buffer);
+        });
+      });
+
+    const brcv = onceBin(jEp);
+    cEp.sendBinary(bin);
+    const bgot = await withTimeout(brcv, 'dc timeout bin');
+    expect(new Uint8Array(bgot)).toEqual(new Uint8Array(bin));
 
     expect(errors).toHaveLength(0);
 

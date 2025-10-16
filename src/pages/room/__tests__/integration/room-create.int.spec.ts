@@ -1,7 +1,7 @@
 import { type Database, get, ref, remove } from 'firebase/database';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { setupFirebaseTestEnv } from '../../../../tests/helpers/env';
-import { startEmu, stopEmu } from '../../../../tests/helpers/firebase-emu';
+import { setupTestEnv } from '../../../../tests/setup/env';
+import { startEmu, stopEmu } from '../../../../tests/setup/testcontainers';
 import type { RoomRecord } from '../../types';
 
 describe('createRoom RTDB integration', () => {
@@ -23,7 +23,12 @@ describe('createRoom RTDB integration', () => {
 
   beforeAll(async () => {
     emu = await startEmu();
-    cleanupEnv = setupFirebaseTestEnv({ hostname: emu.host, dbPort: emu.ports.db });
+    cleanupEnv = setupTestEnv({
+      hostname: emu.host,
+      dbPort: emu.ports.db,
+      stunHost: emu.stunHost ?? emu.host,
+      stunPort: emu.ports.stun,
+    });
 
     ({ createRoom: createRoomFn } = await import('../../fsm-actors/create-room'));
     ({ db } = await import('../../config/firebase'));
@@ -37,8 +42,10 @@ describe('createRoom RTDB integration', () => {
 
   afterAll(async () => {
     cleanupEnv?.restore?.();
-    await stopEmu(emu.env);
-  });
+    if (emu) {
+      await stopEmu(emu);
+    }
+  }, 120_000);
 
   it('creates a room record with owner metadata', async () => {
     const roomId = freshRoomId();

@@ -1,8 +1,6 @@
 services:
   rtdb-emulator:
     ports:
-      - '4000'
-      - '9000'
-      - '9099'
-  web:
-    ports: []
+      - target: 4000
+      - target: 9000
+      - target: 9099

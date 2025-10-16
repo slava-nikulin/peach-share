@@ -1,7 +1,7 @@
 import { type Database, get, ref } from 'firebase/database';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { setupFirebaseTestEnv } from '../../../../tests/helpers/env';
-import { startEmu, stopEmu } from '../../../../tests/helpers/firebase-emu';
+import { setupTestEnv } from '../../../../tests/setup/env';
+import { startEmu, stopEmu } from '../../../../tests/setup/testcontainers';
 import type { RoomRecord } from '../../types';
 
 describe('joinRoom RTDB integration', () => {
@@ -20,10 +20,12 @@ describe('joinRoom RTDB integration', () => {
 
   beforeAll(async () => {
     emu = await startEmu();
-    cleanupEnv = setupFirebaseTestEnv({
+    cleanupEnv = setupTestEnv({
       hostname: emu.host,
       dbPort: emu.ports.db,
       authPort: emu.ports.auth,
+      stunHost: emu.stunHost ?? emu.host,
+      stunPort: emu.ports.stun,
     });
 
     ({ db } = await import('../../config/firebase'));
@@ -33,8 +35,10 @@ describe('joinRoom RTDB integration', () => {
 
   afterAll(async () => {
     cleanupEnv?.restore?.();
-    await stopEmu(emu.env);
-  });
+    if (emu) {
+      await stopEmu(emu);
+    }
+  }, 120_000);
 
   it('подключает гостя к уже созданной комнате', async () => {
     const roomId = rid();

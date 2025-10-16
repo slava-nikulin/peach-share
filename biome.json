@@ -148,16 +148,6 @@
   },
   "overrides": [
     {
-      "includes": ["vite.config.ts", "vitest.config.ts"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noDefaultExport": "off"
-          }
-        }
-      }
-    },
-    {
       "includes": ["**/*.spec.ts"],
       "linter": {
         "rules": {
@@ -168,9 +158,18 @@
       }
     },
     {
-      "includes": ["src/tests/helpers/firebase-emu.ts", "vitest.config.ts"],
+      "includes": [
+        "src/tests/setup/testcontainers.ts",
+        "src/tests/setup/global-testcontainers.ts",
+        "vite.config.ts",
+        "vitest.config.ts",
+        "src/tests/setup/node-webrtc.ts"
+      ],
       "linter": {
         "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          },
           "nursery": {
             "noUnresolvedImports": "off"
           }

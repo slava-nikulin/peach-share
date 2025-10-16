@@ -1,4 +1,18 @@
 services:
+  stun:
+    image: instrumentisto/coturn:latest
+    command: >
+      turnserver --stun-only
+      --listening-port=3478
+      --listening-ip=0.0.0.0
+      --no-tls --no-dtls --fingerprint
+    ports:
+      - target: 3478
+        protocol: udp
+      - target: 3478
+        protocol: tcp
+    profiles: ['stun', 'emu']
+
   rtdb-emulator:
     build:
       context: ..
@@ -14,7 +28,7 @@ services:
       FIREBASE_EMULATOR_DOWNLOAD_PATH: /opt/firebase
       XDG_CACHE_HOME: /opt/firebase/.cache
     entrypoint: ['/app/scripts/emulator-entrypoint.sh']
-    profiles: ['emu']
+    profiles: ['rtdb', 'emu']
 
   web:
     build:
