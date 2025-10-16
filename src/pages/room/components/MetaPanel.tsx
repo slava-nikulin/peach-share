@@ -99,7 +99,7 @@ const PanelContainer = (props: PanelContainerProps): JSX.Element => {
             <MetaLabel>PAKE session</MetaLabel>
             <div>
               <Show
-                when={(props.vmRef?.pakeKey()?.length ?? 0) > 0}
+                when={(props.vmRef?.sas()?.length ?? 0) > 0}
                 fallback={<SkeletonBar width="w-56" />}
               >
                 <span class="me-2 rounded-sm bg-green-100 px-2.5 py-0.5 font-medium text-green-800 text-xs dark:bg-green-900 dark:text-green-300">

@@ -1,1 +1,8 @@
-{ "actSummary": true }
+{
+  "pull_request": {
+    "number": 1,
+    "head": { "ref": "feat/x", "sha": "1111111111111111111111111111111111111111" },
+    "base": { "ref": "main", "sha": "2222222222222222222222222222222222222222" }
+  },
+  "actSummary": true
+}
