@@ -1,7 +1,7 @@
 import { signOut } from 'firebase/auth';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { setupFirebaseTestEnv } from '../../../../tests/helpers/env';
-import { startEmu, stopEmu } from '../../../../tests/helpers/firebase-emu';
+import { setupTestEnv } from '../../../../tests/setup/env';
+import { startEmu, stopEmu } from '../../../../tests/setup/testcontainers';
 
 describe('anonAuth integration', () => {
   let cleanupEnv: { restore: () => void };
@@ -12,10 +12,12 @@ describe('anonAuth integration', () => {
 
   beforeAll(async () => {
     emu = await startEmu();
-    cleanupEnv = setupFirebaseTestEnv({
+    cleanupEnv = setupTestEnv({
       hostname: emu.host,
       dbPort: emu.ports.db,
       authPort: emu.ports.auth,
+      stunHost: emu.stunHost ?? emu.host,
+      stunPort: emu.ports.stun,
     });
     ({ auth } = await import('../../config/firebase'));
     const mod = await import('../../fsm-actors/auth');
@@ -28,8 +30,8 @@ describe('anonAuth integration', () => {
       await signOut(auth).catch(() => {});
     } catch {}
     cleanupEnv?.restore?.();
-    await stopEmu(emu?.env).catch(() => {});
-  });
+    await stopEmu(emu).catch(() => {});
+  }, 120_000);
 
   it('возвращает UID', async () => {
     const uid = await anonAuth();

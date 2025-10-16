@@ -27,6 +27,9 @@ importers:
         specifier: ^5.22.1
         version: 5.22.1
     devDependencies:
+      '@avahq/wrtc':
+        specifier: 0.7.6-fixondata.1
+        version: 0.7.6-fixondata.1
       '@biomejs/biome':
         specifier: ^2.2.5
         version: 2.2.5
@@ -71,6 +74,29 @@ packages:
 
   '@asamuzakjp/nwsapi@2.3.9':
     resolution: {integrity: sha512-n8GuYSrI9bF7FFZ/SjhwevlHc8xaVlb/7HmHelnc/PZXBD2ZR49NnN9sMMuDdEGPeeRQ5d0hqlSlEpgCX3Wl0Q==}
+
+  '@avahq/wrtc-darwin-arm64@0.7.3-fixondata.0':
+    resolution: {integrity: sha512-OgcfOrKRoX785Byx0SrmWgfJHQUZ6M87sfSRI0Y5VldcOggi2uwRTz5breRm9a5W5SVz6Y0tumre/34Nl9ovKQ==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@avahq/wrtc-darwin-x64@0.7.3-fixondata.0':
+    resolution: {integrity: sha512-vRKxYZi7cp/cgdivrIir6j0tFmPu+QN5t5I42UPJrZhaCHAwlLSWmPUrdo9qi3rbV0XsOcYvg5BFBjDTeJwPew==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@avahq/wrtc-linux-arm64@0.7.3-fixondata.0':
+    resolution: {integrity: sha512-HjcIwfQjCm/uOS5YQVvGJ8FY33w0IvkiCjlhQsdv3l04RVPgK2xdRicXlT0nUwOanXsUfXt/WafkRWT1SB4w7w==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@avahq/wrtc-linux-x64@0.7.3-fixondata.0':
+    resolution: {integrity: sha512-xKBT6ANhhUDV7X+iiww2ctT3HwQecpIrpxb5ehH90bRuT2JD0Bdm5aHidG6+c9ry5xSvysZkYV/PPib/0yUT1w==}
+    cpu: [x64]
+    os: [linux]
+
+  '@avahq/wrtc@0.7.6-fixondata.1':
+    resolution: {integrity: sha512-VW1ujefw1uGsqw/PyCee4Vsxm9pj59QHljd6+T+DkiS/XiTQFzMTOrzkDz46ewExo8Guodd6koolqxw0aJivKg==}
 
   '@babel/code-frame@7.27.1':
     resolution: {integrity: sha512-cjQ7ZlQ0Mv3b47hABuTevyTuYN4i+loJKGeV9flcCgIK37cCXRh+L1bd3iBHlynerhQ7BhCkn2BPbQUL+rGqFg==}
@@ -1249,6 +1275,11 @@ packages:
     resolution: {integrity: sha512-iND4mcOWhPaCNh54WmK/KoSb35AFqPAUWFMffTQcp52uQt36b5uNwEJTSXntJZBbeGad72Crbi/hvDIv6us/6Q==}
     engines: {node: '>= 8.0'}
 
+  domexception@4.0.0:
+    resolution: {integrity: sha512-A2is4PLG+eeSfoTMA95/s4pvAoSo2mKtiM5jlHkAVewmiO8ISFTFKZjH7UAM1Atli/OT/7JHOrJRJiMKUZKYBw==}
+    engines: {node: '>=12'}
+    deprecated: Use your platform's native DOMException instead
+
   eastasianwidth@0.2.0:
     resolution: {integrity: sha512-I88TYZWc9XiYHRQ4/3c5rjjfgkjhLyW2luGIheGERbNQ6OY7yTybanSpDXZa8y7VUP9YmDcYa+eyq4ca7iLqWA==}
 
@@ -2029,6 +2060,10 @@ packages:
   web-vitals@4.2.4:
     resolution: {integrity: sha512-r4DIlprAGwJ7YM11VZp4R884m0Vmgr6EAKe3P+kO0PPj3Unqyvv59rczf6UiGcb9Z8QxZVcqKNwv/g0WNdWwsw==}
 
+  webidl-conversions@7.0.0:
+    resolution: {integrity: sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==}
+    engines: {node: '>=12'}
+
   webidl-conversions@8.0.0:
     resolution: {integrity: sha512-n4W4YFyz5JzOfQeA8oN7dUYpR+MBP3PIUsn2jLjWXwK5ASUzt0Jc/A5sAUZoCYFJRGF0FBKJ+1JjN43rNdsQzA==}
     engines: {node: '>=20'}
@@ -2143,6 +2178,26 @@ snapshots:
       lru-cache: 11.2.2
 
   '@asamuzakjp/nwsapi@2.3.9': {}
+
+  '@avahq/wrtc-darwin-arm64@0.7.3-fixondata.0':
+    optional: true
+
+  '@avahq/wrtc-darwin-x64@0.7.3-fixondata.0':
+    optional: true
+
+  '@avahq/wrtc-linux-arm64@0.7.3-fixondata.0':
+    optional: true
+
+  '@avahq/wrtc-linux-x64@0.7.3-fixondata.0':
+    optional: true
+
+  '@avahq/wrtc@0.7.6-fixondata.1':
+    optionalDependencies:
+      '@avahq/wrtc-darwin-arm64': 0.7.3-fixondata.0
+      '@avahq/wrtc-darwin-x64': 0.7.3-fixondata.0
+      '@avahq/wrtc-linux-arm64': 0.7.3-fixondata.0
+      '@avahq/wrtc-linux-x64': 0.7.3-fixondata.0
+      domexception: 4.0.0
 
   '@babel/code-frame@7.27.1':
     dependencies:
@@ -3334,6 +3389,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  domexception@4.0.0:
+    dependencies:
+      webidl-conversions: 7.0.0
+    optional: true
+
   eastasianwidth@0.2.0: {}
 
   electron-to-chromium@1.5.222: {}
@@ -4188,6 +4248,9 @@ snapshots:
       xml-name-validator: 5.0.0
 
   web-vitals@4.2.4: {}
+
+  webidl-conversions@7.0.0:
+    optional: true
 
   webidl-conversions@8.0.0: {}
 

@@ -27,6 +27,7 @@
     "xstate": "^5.22.1"
   },
   "devDependencies": {
+    "@avahq/wrtc": "0.7.6-fixondata.1",
     "@biomejs/biome": "^2.2.5",
     "@tailwindcss/vite": "^4.1.13",
     "@types/dockerode": "^3.3.44",
