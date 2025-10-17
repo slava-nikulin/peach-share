@@ -46,7 +46,7 @@ export const Home: Component = () => {
     const pathId = await hkdfPathId(secret, 'path', 128);
 
     navigate(`/room/${pathId}`, {
-      state: { secret: secretB64, intent: 'create' },
+      state: { secret: secretB64, intent: 'join' },
     });
   };
 

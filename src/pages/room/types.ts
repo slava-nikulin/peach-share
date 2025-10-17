@@ -6,7 +6,7 @@ export type Role = 'owner' | 'guest';
 export interface RoomRecord {
   room_id: string;
   owner: string;
-  guestId?: string;
+  guest?: string;
   created_at: number | object;
   updated_at: number | object;
 

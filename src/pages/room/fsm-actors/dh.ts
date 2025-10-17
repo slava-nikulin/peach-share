@@ -1,4 +1,4 @@
-import type { DatabaseReference } from 'firebase/database';
+import type { Database, DatabaseReference } from 'firebase/database';
 import { child, off, onValue, ref, runTransaction, update } from 'firebase/database';
 import {
   ascii,
@@ -46,15 +46,22 @@ interface DerivedKeys {
   nonceB: Uint8Array;
 }
 
-export async function startDH(input: {
-  roomId: string;
-  role: Role;
-  sharedS: string; // base64url 32B
-  timeoutMs?: number;
-  sasDigits?: number;
-  context?: string;
-}): Promise<{ enc_key: Uint8Array; sas: string }> {
-  const ctx = await buildSessionContext(input);
+interface StartDhDeps {
+  db?: Database;
+}
+
+export async function startDH(
+  input: {
+    roomId: string;
+    role: Role;
+    sharedS: string; // base64url 32B
+    timeoutMs?: number;
+    sasDigits?: number;
+    context?: string;
+  },
+  deps: StartDhDeps = {},
+): Promise<{ enc_key: Uint8Array; sas: string }> {
+  const ctx = await buildSessionContext(input, deps.db ?? db);
   const handshake = await initiateHandshake(ctx);
   await publishLocalHandshake(ctx, handshake);
   const peer = await waitPeerArtifacts(ctx);
@@ -65,18 +72,21 @@ export async function startDH(input: {
   return { enc_key: keys.encKey, sas };
 }
 
-async function buildSessionContext(input: {
-  roomId: string;
-  role: Role;
-  sharedS: string;
-  timeoutMs?: number;
-  sasDigits?: number;
-  context?: string;
-}): Promise<SessionContext> {
+async function buildSessionContext(
+  input: {
+    roomId: string;
+    role: Role;
+    sharedS: string;
+    timeoutMs?: number;
+    sasDigits?: number;
+    context?: string;
+  },
+  database: Database,
+): Promise<SessionContext> {
   const { roomId, role, sharedS, timeoutMs = 20_000, sasDigits = 6, context = 'default' } = input;
 
   const pathId = `rooms/${roomId}/dh`;
-  const dhRef = ref(db, pathId);
+  const dhRef = ref(database, pathId);
   const meKey: Role = role === 'owner' ? 'owner' : 'guest';
   const peerKey: Role = role === 'owner' ? 'guest' : 'owner';
 

@@ -163,7 +163,8 @@
         "src/tests/setup/global-testcontainers.ts",
         "vite.config.ts",
         "vitest.config.ts",
-        "src/tests/setup/node-webrtc.ts"
+        "src/tests/setup/node-webrtc.ts",
+        "playwright.config.ts"
       ],
       "linter": {
         "rules": {

@@ -1,10 +1,16 @@
-import type { Database } from 'firebase/database';
 import { child, get, ref, remove } from 'firebase/database';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { importAesGcmKey, pushEncrypted, sigPaths } from '../../../../lib/crypto-webrtc';
 import { type RtcEndpoint, setupWebRTC } from '../../../../lib/webrtc';
 import { setupTestEnv } from '../../../../tests/setup/env';
 import { startEmu, stopEmu } from '../../../../tests/setup/testcontainers';
+import {
+  cleanupTestFirebaseUsers,
+  createTestFirebaseUser,
+  type TestFirebaseUserCtx,
+} from '../../../../tests/utils/firebase-user';
+import { createRoom } from '../../fsm-actors/create-room';
+import { joinRoom } from '../../fsm-actors/join-room';
 
 const NON_EMPTY = /\S/;
 const SIXTY_SEC = 60_000;
@@ -23,8 +29,8 @@ const waitReady = (ep: RtcEndpoint): Promise<void> => ep.ready;
 describe('setupWebRTC integration', () => {
   let emu: Awaited<ReturnType<typeof startEmu>>;
   let cleanupEnv: { restore: () => void };
-  let db: Database;
-  const createdRooms: string[] = [];
+  const roomsToCleanup: Array<{ roomId: string; ctx: TestFirebaseUserCtx }> = [];
+  const activeUsers: TestFirebaseUserCtx[] = [];
 
   beforeAll(async () => {
     vi.useRealTimers();
@@ -37,7 +43,7 @@ describe('setupWebRTC integration', () => {
       stunHost: emu.stunHost ?? emu.host,
     });
     vi.resetModules();
-    ({ db } = await import('../../config/firebase')); // ваш экспорт db
+    await import('../../config/firebase');
   }, 180_000);
 
   afterAll(async () => {
@@ -48,27 +54,41 @@ describe('setupWebRTC integration', () => {
   }, 120_000);
 
   afterEach(async () => {
-    if (!db || createdRooms.length === 0) return;
-    const ids = createdRooms.splice(0);
-    await Promise.all(ids.map((id) => remove(ref(db, `rooms/${id}`))));
+    if (roomsToCleanup.length > 0) {
+      const entries = roomsToCleanup.splice(0);
+      await Promise.all(
+        entries.map(({ roomId, ctx }) => remove(ref(ctx.db, `rooms/${roomId}`)).catch(() => {})),
+      );
+    }
+    if (activeUsers.length > 0) {
+      const users = activeUsers.splice(0);
+      await cleanupTestFirebaseUsers(users);
+    }
   }, 60_000);
 
   it('owner <-> guest: ready, JSON и бинарь ходят, сигналинг в RTDB создан', async () => {
     const roomId = `room-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-    createdRooms.push(roomId);
-    const roomRef = ref(db, `rooms/${roomId}`);
+    const ownerCtx = await createTestFirebaseUser('owner');
+    const guestCtx = await createTestFirebaseUser('guest');
+    activeUsers.push(ownerCtx, guestCtx);
+    roomsToCleanup.push({ roomId, ctx: ownerCtx });
+    const ownerRoomRef = ref(ownerCtx.db, `rooms/${roomId}`);
+    const guestRoomRef = ref(guestCtx.db, `rooms/${roomId}`);
     const encKey = new Uint8Array(32).fill(7);
     const iceServers = stunFromEnv(); // для реализма; можно оставить []
 
+    await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
+    await joinRoom({ roomId, authId: guestCtx.uid }, { db: guestCtx.db });
+
     const ownerP = setupWebRTC({
-      dbRoomRef: roomRef,
+      dbRoomRef: ownerRoomRef,
       role: 'owner',
       encKey,
       timeoutMs: SIXTY_SEC,
       stun: iceServers,
     });
     const guestP = setupWebRTC({
-      dbRoomRef: roomRef,
+      dbRoomRef: guestRoomRef,
       role: 'guest',
       encKey,
       timeoutMs: SIXTY_SEC,
@@ -111,7 +131,7 @@ describe('setupWebRTC integration', () => {
     expect(new Uint8Array(gotB)).toEqual(new Uint8Array(bin));
 
     // сигналинг в RTDB
-    const wrtcBase = child(roomRef, 'webrtc');
+    const wrtcBase = child(ownerRoomRef, 'webrtc');
     const offerOwner = await get(child(child(wrtcBase, 'offer'), 'owner'));
     const answerGuest = await get(child(child(wrtcBase, 'answer'), 'guest'));
     expect(offerOwner.exists()).toBe(true);
@@ -132,15 +152,22 @@ describe('setupWebRTC integration', () => {
 
   it('очередь ICE-кандидатов до setRemoteDescription: соединение устанавливается', async () => {
     const roomId = `room-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-    createdRooms.push(roomId);
-    const roomRef = ref(db, `rooms/${roomId}`);
+    const ownerCtx = await createTestFirebaseUser('owner');
+    const guestCtx = await createTestFirebaseUser('guest');
+    activeUsers.push(ownerCtx, guestCtx);
+    roomsToCleanup.push({ roomId, ctx: ownerCtx });
+    const ownerRoomRef = ref(ownerCtx.db, `rooms/${roomId}`);
+    const guestRoomRef = ref(guestCtx.db, `rooms/${roomId}`);
     const encKey = new Uint8Array(32).fill(8);
     const aes = await importAesGcmKey(encKey);
-    const pathsForGuest = sigPaths({ roomRef, role: 'guest' }); // его sourceRef = candidates/owner
+    const ownerPaths = sigPaths({ roomRef: ownerRoomRef, role: 'owner' });
+
+    await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
+    await joinRoom({ roomId, authId: guestCtx.uid }, { db: guestCtx.db });
 
     // стартуем guest раньше, чтобы подписался на кандидатов и оффер
     const guestP = setupWebRTC({
-      dbRoomRef: roomRef,
+      dbRoomRef: guestRoomRef,
       role: 'guest',
       encKey,
       timeoutMs: SIXTY_SEC,
@@ -148,7 +175,7 @@ describe('setupWebRTC integration', () => {
     });
 
     // пушим "ранний" кандидат владельца до оффера
-    await pushEncrypted(pathsForGuest.theirCandidatesRef, aes, {
+    await pushEncrypted(ownerPaths.myCandidatesRef, aes, {
       candidate: 'candidate:0 1 UDP 2122252543 127.0.0.1 55555 typ host',
       sdpMid: '0',
       sdpMLineIndex: 0,
@@ -156,7 +183,7 @@ describe('setupWebRTC integration', () => {
 
     // теперь стартуем owner
     const ownerP = setupWebRTC({
-      dbRoomRef: roomRef,
+      dbRoomRef: ownerRoomRef,
       role: 'owner',
       encKey,
       timeoutMs: SIXTY_SEC,
@@ -172,21 +199,28 @@ describe('setupWebRTC integration', () => {
 
   it('неверный ключ шифрования: setupWebRTC падает', async () => {
     const roomId = `room-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-    createdRooms.push(roomId);
-    const roomRef = ref(db, `rooms/${roomId}`);
+    const ownerCtx = await createTestFirebaseUser('owner');
+    const guestCtx = await createTestFirebaseUser('guest');
+    activeUsers.push(ownerCtx, guestCtx);
+    roomsToCleanup.push({ roomId, ctx: ownerCtx });
+    const ownerRoomRef = ref(ownerCtx.db, `rooms/${roomId}`);
+    const guestRoomRef = ref(guestCtx.db, `rooms/${roomId}`);
 
     const encOwner = new Uint8Array(32).fill(1);
     const encGuest = new Uint8Array(32).fill(2); // другой ключ
 
+    await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
+    await joinRoom({ roomId, authId: guestCtx.uid }, { db: guestCtx.db });
+
     const ownerP = setupWebRTC({
-      dbRoomRef: roomRef,
+      dbRoomRef: ownerRoomRef,
       role: 'owner',
       encKey: encOwner,
       timeoutMs: 15_000,
       stun: stunFromEnv(),
     });
     const guestP = setupWebRTC({
-      dbRoomRef: roomRef,
+      dbRoomRef: guestRoomRef,
       role: 'guest',
       encKey: encGuest,
       timeoutMs: 15_000,

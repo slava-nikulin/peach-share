@@ -28,6 +28,11 @@ export function startRoomFlow(
       vmRtcDone: () => vm.setRtcReady(true),
       vmCleanupDone: () => vm.setCleanupDone(true),
       captureError: ({ event }: { event: ErrorActorEvent }) => {
+        const toLog =
+          event.error instanceof Error
+            ? (event.error.stack ?? `${event.error.name}: ${event.error.message}`)
+            : event.error;
+        console.error('[FSM ERROR]', toLog);
         setError?.(normalizeError(event.error));
       },
     },
