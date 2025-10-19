@@ -1,7 +1,7 @@
 name: CI
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
     types: [opened, synchronize, reopened]
 
 concurrency:
@@ -45,7 +45,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:int
 
-  e2e:
+  e2e-vitest:
     runs-on: ubuntu-latest
     needs: integration
     timeout-minutes: 60
@@ -62,7 +62,7 @@ jobs:
           docker --version
           docker info
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:e2e
+      - run: pnpm test:e2e-vitest
 
   summary:
     needs: [unit, integration, e2e]

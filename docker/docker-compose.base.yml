@@ -27,33 +27,18 @@ services:
       PROJECT_ID: demo-peach-share
       FIREBASE_EMULATOR_DOWNLOAD_PATH: /opt/firebase
       XDG_CACHE_HOME: /opt/firebase/.cache
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'curl -fsS http://localhost:9000/health || curl -fsS http://localhost:9000/.json || nc -z 127.0.0.1 9000',
+        ]
+      interval: 5s
+      timeout: 2s
+      retries: 20
+      start_period: 10s
     entrypoint: ['/app/scripts/emulator-entrypoint.sh']
     profiles: ['rtdb', 'emu', 'e2e']
-
-  playwright:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.e2e
-    working_dir: /src
-    volumes:
-      - ..:/src:delegated
-      - pnpm-store:/var/pnpm-store
-      - node_modules:/src/node_modules
-    environment:
-      CI: '1'
-      MODE: emu
-      BASE_URL: http://web:5173
-      HEADED: '1'
-      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
-      DISPLAY: ':99' # чтобы явно
-      VNC_PORT: '5900'
-      VNC_GEOMETRY: '1920x1080x24'
-    shm_size: '1gb'
-    depends_on: [web]
-    ports:
-      - '5901:5900' # VNC наружу (только на localhost)
-    entrypoint: ['/src/docker/scripts/e2e-entrypoint.sh']
-    profiles: ['e2e']
 
   web:
     build:
@@ -68,6 +53,12 @@ services:
       MODE: emu
       CHOKIDAR_USEPOLLING: '1'
       WATCHPACK_POLLING: 'true'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://localhost:5173/']
+      interval: 5s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
     entrypoint: ['/src/docker/scripts/web-entrypoint.sh']
     depends_on:
       - rtdb-emulator

@@ -27,8 +27,8 @@ export default defineConfig({
       {
         extends: true,
         test: {
-          name: 'e2e',
-          include: ['**/*.e2e.{test,spec}.ts'],
+          name: 'e2e-vitest',
+          include: ['**/*.e2e-vitest.{test,spec}.ts'],
           setupFiles: ['src/tests/setup/node-webrtc.ts'],
           environment: 'node',
           testTimeout: 240_000,

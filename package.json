@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "docker:emu": "docker compose -p peachshare-emu -f docker/docker-compose.base.yml -f docker/docker-compose.dev.yml --profile emu up --build",
+    "docker:emu": "docker compose -p peachshare-emu -f docker/docker-compose.base.yml -f docker/docker-compose.dev.yml --profile emu up --build --wait",
     "docker:emu:down": "docker compose -p peachshare-emu -f docker/docker-compose.base.yml -f docker/docker-compose.dev.yml --profile emu down",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
@@ -15,11 +15,11 @@
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:int": "vitest run --project integration",
-    "test:e2e": "vitest run --project e2e",
+    "test:e2e": "vitest run --project e2e-vitest",
     "ci:local": "act -P ubuntu-latest=catthehacker/ubuntu:act-22.04 -e .github/workflows/act.event.json pull_request",
     "check": "./.husky/pre-push",
-    "e2e": "docker compose -p peachshare-e2e -f docker/docker-compose.base.yml --profile e2e run --rm playwright pnpm exec playwright test",
-    "e2e:headed": "docker compose -p peachshare-e2e -f docker/docker-compose.base.yml --profile e2e run --rm playwright bash -lc 'xvfb-run -a pnpm exec playwright test --headed'"
+    "wdio": "wdio run ./wdio.conf.ts",
+    "wdio:headless": "HEADLESS=1 wdio run ./wdio.conf.ts"
   },
   "dependencies": {
     "@solidjs/router": "^0.15.3",
@@ -32,16 +32,24 @@
   "devDependencies": {
     "@avahq/wrtc": "0.7.6-fixondata.1",
     "@biomejs/biome": "^2.2.5",
-    "@playwright/test": "^1.56.1",
     "@tailwindcss/vite": "^4.1.13",
+    "@testing-library/webdriverio": "^3.2.1",
     "@types/dockerode": "^3.3.44",
     "@types/node": "^24.7.2",
+    "@wdio/cli": "^9.20.0",
+    "@wdio/globals": "^9.17.0",
+    "@wdio/junit-reporter": "^9.20.0",
+    "@wdio/local-runner": "^9.20.0",
+    "@wdio/mocha-framework": "^9.20.0",
+    "@wdio/spec-reporter": "^9.20.0",
     "husky": "^9.1.7",
     "jsdom": "^27.0.0",
     "tailwindcss": "^4.1.13",
     "testcontainers": "11.7.1",
     "typescript": "~5.9.3",
     "vite": "^7.1.7",
-    "vite-plugin-solid": "^2.11.8"
+    "vite-plugin-solid": "^2.11.8",
+    "wdio-wait-for": "^3.1.0",
+    "webdriverio": "^9.20.0"
   }
 }

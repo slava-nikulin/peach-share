@@ -2,5 +2,6 @@ FROM node:24-alpine3.22
 
 WORKDIR /src
 
+RUN apk update && apk add --no-cache bash curl
 RUN corepack enable && corepack prepare pnpm@10.18.2 --activate
 RUN pnpm config set store-dir /var/pnpm-store
