@@ -44,5 +44,5 @@ class HomePage extends Page {
   }
 }
 
-export const homeOwnerPage: HomePage = new HomePage('owner');
-export const homeGuestPage: HomePage = new HomePage('guest');
+export const homePageOwner: HomePage = new HomePage('owner');
+export const homePageGuest: HomePage = new HomePage('guest');

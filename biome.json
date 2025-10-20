@@ -158,14 +158,7 @@
       }
     },
     {
-      "includes": [
-        "src/tests/setup/testcontainers.ts",
-        "src/tests/setup/global-testcontainers.ts",
-        "vite.config.ts",
-        "vitest.config.ts",
-        "src/tests/setup/node-webrtc.ts",
-        "playwright.config.ts"
-      ],
+      "includes": ["src/tests/**/*.ts", "test/**/*.ts", "*.config.ts"],
       "linter": {
         "rules": {
           "style": {

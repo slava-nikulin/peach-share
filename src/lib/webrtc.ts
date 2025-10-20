@@ -31,7 +31,6 @@ interface SetupArgs {
 type SignalingPaths = ReturnType<typeof sigPaths>;
 
 const CHANNEL_LABEL = 'meta';
-// const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: ['stun:stun.l.google.com:19302'] }];
 
 export async function setupWebRTC(args: SetupArgs): Promise<RtcEndpoint> {
   const { dbRoomRef, role, encKey, timeoutMs, stun } = args;
