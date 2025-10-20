@@ -1,7 +1,7 @@
 import { child, get, ref, remove } from 'firebase/database';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { importAesGcmKey, pushEncrypted, sigPaths } from '../../../../lib/crypto-webrtc';
-import { type RtcEndpoint, setupWebRTC } from '../../../../lib/webrtc';
+import { type RtcEndpoint, WebRTCConnection } from '../../../../lib/webrtc';
 import { setupTestEnv } from '../../../../tests/setup/env';
 import { startEmu, stopEmu } from '../../../../tests/setup/testcontainers';
 import {
@@ -26,7 +26,7 @@ const stunFromEnv = (): RTCIceServer[] => {
 
 const waitReady = (ep: RtcEndpoint): Promise<void> => ep.ready;
 
-describe('setupWebRTC integration', () => {
+describe('WebRTCConnection integration', () => {
   let emu: Awaited<ReturnType<typeof startEmu>>;
   let cleanupEnv: { restore: () => void };
   const roomsToCleanup: Array<{ roomId: string; ctx: TestFirebaseUserCtx }> = [];
@@ -80,14 +80,14 @@ describe('setupWebRTC integration', () => {
     await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
     await joinRoom({ roomId, authId: guestCtx.uid }, { db: guestCtx.db });
 
-    const ownerP = setupWebRTC({
+    const ownerP = WebRTCConnection.create({
       dbRoomRef: ownerRoomRef,
       role: 'owner',
       encKey,
       timeoutMs: SIXTY_SEC,
       stun: iceServers,
     });
-    const guestP = setupWebRTC({
+    const guestP = WebRTCConnection.create({
       dbRoomRef: guestRoomRef,
       role: 'guest',
       encKey,
@@ -166,7 +166,7 @@ describe('setupWebRTC integration', () => {
     await joinRoom({ roomId, authId: guestCtx.uid }, { db: guestCtx.db });
 
     // стартуем guest раньше, чтобы подписался на кандидатов и оффер
-    const guestP = setupWebRTC({
+    const guestP = WebRTCConnection.create({
       dbRoomRef: guestRoomRef,
       role: 'guest',
       encKey,
@@ -182,7 +182,7 @@ describe('setupWebRTC integration', () => {
     });
 
     // теперь стартуем owner
-    const ownerP = setupWebRTC({
+    const ownerP = WebRTCConnection.create({
       dbRoomRef: ownerRoomRef,
       role: 'owner',
       encKey,
@@ -197,7 +197,7 @@ describe('setupWebRTC integration', () => {
     guest.close();
   }, 120_000);
 
-  it('неверный ключ шифрования: setupWebRTC падает', async () => {
+  it('неверный ключ шифрования: WebRTCConnection.create падает', async () => {
     const roomId = `room-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
     const ownerCtx = await createTestFirebaseUser('owner');
     const guestCtx = await createTestFirebaseUser('guest');
@@ -212,14 +212,14 @@ describe('setupWebRTC integration', () => {
     await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
     await joinRoom({ roomId, authId: guestCtx.uid }, { db: guestCtx.db });
 
-    const ownerP = setupWebRTC({
+    const ownerP = WebRTCConnection.create({
       dbRoomRef: ownerRoomRef,
       role: 'owner',
       encKey: encOwner,
       timeoutMs: 15_000,
       stun: stunFromEnv(),
     });
-    const guestP = setupWebRTC({
+    const guestP = WebRTCConnection.create({
       dbRoomRef: guestRoomRef,
       role: 'guest',
       encKey: encGuest,

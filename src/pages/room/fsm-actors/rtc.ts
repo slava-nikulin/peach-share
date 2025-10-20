@@ -1,5 +1,5 @@
 import { ref } from 'firebase/database';
-import { type RtcEndpoint, setupWebRTC } from '../../../lib/webrtc';
+import { type RtcEndpoint, WebRTCConnection } from '../../../lib/webrtc';
 import { db } from '../config/firebase';
 import type { Intent, RoomRecord } from '../types';
 
@@ -13,7 +13,7 @@ export async function startRTC(input: {
   const role = input.intent === 'create' ? 'owner' : 'guest';
   const dbRoomRef = ref(db, `rooms/${input.room.room_id}`);
 
-  const endpoint = await setupWebRTC({
+  const endpoint = await WebRTCConnection.create({
     dbRoomRef,
     role,
     encKey: input.encKey,
