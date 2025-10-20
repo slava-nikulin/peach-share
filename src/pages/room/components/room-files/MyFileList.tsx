@@ -23,17 +23,17 @@ export const MyFileList = (props: {
             <button
               type="button"
               data-testid="local-remove-button"
-              class="rounded border border-rose-200 px-2 py-1 text-[11px] text-rose-700 hover:bg-rose-50"
+              class="rounded border border-rose-200 px-2 py-1 text-[11px] text-rose-700 hover:cursor-pointer hover:bg-rose-50"
               onClick={(): void => props.onRemove(file.id)}
             >
-              Удалить
+              Remove
             </button>
           </div>
         )}
       </For>
       <Show when={props.files.length === 0}>
         <div class="rounded-lg border border-gray-300 border-dashed bg-gray-50 px-3 py-6 text-center text-slate-500 text-sm">
-          Нет файлов
+          No files
         </div>
       </Show>
     </div>

@@ -23,7 +23,7 @@ export const Dropzone = (props: DropzoneProps): JSX.Element => {
         onDrop={props.onDrop}
         onDragOver={props.onDragOver}
       >
-        <div class="flex flex-col items-center justify-center pt-5 pb-6 text-center">
+        <div class="flex flex-col items-center justify-center pt-5 pb-6 text-center hover:cursor-pointer">
           <svg
             class="mb-2 h-7 w-7 text-gray-500"
             viewBox="0 0 20 16"
@@ -39,9 +39,9 @@ export const Dropzone = (props: DropzoneProps): JSX.Element => {
             />
           </svg>
           <p class="text-gray-600 text-sm">
-            <span class="font-medium">Кликните</span> или перетащите файлы
+            <span class="font-medium">Click</span> to upload
           </p>
-          <p class="text-gray-500 text-xs">P2P через WebRTC. На сервер не грузим</p>
+          <p class="text-gray-500 text-xs">Or drag files here</p>
         </div>
         <input
           ref={(node: HTMLInputElement | null) => {

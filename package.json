@@ -15,11 +15,11 @@
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:int": "vitest run --project integration",
-    "test:e2e": "vitest run --project e2e-vitest",
+    "test:e2e:vitest": "vitest run --project e2e-vitest",
+    "test:e2e:wdio": "wdio run ./wdio.conf.ts",
+    "test:e2e:wdio:headless": "HEADLESS=1 wdio run ./wdio.conf.ts",
     "ci:local": "act -P ubuntu-latest=catthehacker/ubuntu:act-22.04 -e .github/workflows/act.event.json pull_request",
-    "check": "./.husky/pre-push",
-    "wdio": "wdio run ./wdio.conf.ts",
-    "wdio:headless": "HEADLESS=1 wdio run ./wdio.conf.ts"
+    "check": "./.husky/pre-push"
   },
   "dependencies": {
     "@solidjs/router": "^0.15.3",

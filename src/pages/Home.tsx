@@ -66,8 +66,9 @@ export const Home: Component = () => {
           <ol class="max-w-md list-inside list-decimal space-y-1 text-gray-500 text-md dark:text-slate-700">
             <li>Connect devices to the same Wi-Fi network.</li>
             <li>Create a room on one device.</li>
-            <li>Connect from another device using the code/QR code.</li>
-            <li>File sharing — in the next step.</li>
+            <li>Connect from another device using the secret code.</li>
+            <li>Do P2P file sharing</li>
+            <li>Close tab when you done</li>
           </ol>
         </div>
       </section>

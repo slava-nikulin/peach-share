@@ -28,11 +28,11 @@ export const GuestList = (props: {
                 <button
                   type="button"
                   data-testid="remote-request-button"
-                  class="rounded border border-slate-200 px-2 py-1 text-[11px] hover:bg-slate-50 disabled:opacity-50"
+                  class="rounded border border-slate-200 px-2 py-1 text-[11px] hover:cursor-pointer hover:bg-slate-50 disabled:opacity-50"
                   disabled={file.downloading}
                   onClick={(): void => props.onRequest(file.id)}
                 >
-                  {file.downloading ? 'Ждём…' : 'Скачать'}
+                  {file.downloading ? 'Waiting…' : 'Download'}
                 </button>
               }
             >
@@ -41,9 +41,9 @@ export const GuestList = (props: {
                   href={url()}
                   download={file.name}
                   data-testid="remote-download-link"
-                  class="rounded border border-slate-200 px-2 py-1 text-[11px] hover:bg-slate-50"
+                  class="rounded border border-slate-200 px-2 py-1 text-[11px] hover:cursor-pointer hover:bg-slate-50"
                 >
-                  Скачать
+                  Download
                 </a>
               )}
             </Show>
@@ -52,7 +52,7 @@ export const GuestList = (props: {
       </For>
       <Show when={props.files.length === 0}>
         <div class="rounded-lg border border-gray-300 border-dashed bg-gray-50 px-3 py-6 text-center text-slate-500 text-sm">
-          Нет файлов
+          No files
         </div>
       </Show>
     </div>
