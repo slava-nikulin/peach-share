@@ -1,0 +1,26 @@
+services:
+  e2e-tests:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.e2e
+    working_dir: /app
+    environment:
+      VITE_EMULATOR_RTD_HOST: rtdb-emulator
+      VITE_EMULATOR_AUTH_HOST: rtdb-emulator
+      HEADLESS: "1"
+      # при необходимости: NODE_OPTIONS: "--max_old_space_size=4096"
+    depends_on:
+      rtdb-emulator:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+      stun:
+        condition: service_started
+    profiles: ['e2e']
+    # Если нужны артефакты отчётов:
+    # volumes:
+    #   - ./reports:/app/reports
+
+  web:
+    environment:
+      MODE: e2e

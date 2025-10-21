@@ -32,24 +32,6 @@ interface Ctx extends Input {
   lastError?: { at: string; message: string; cause?: unknown };
 }
 
-// helpers
-// const toErr = (value: unknown): unknown => {
-//   if (typeof value === 'object' && value !== null) {
-//     const candidate = value as { error?: unknown; data?: unknown };
-//     if (candidate.error !== undefined) return candidate.error;
-//     if (candidate.data !== undefined) return candidate.data;
-//   }
-//   return value;
-// };
-// const msgOf = (value: unknown): string => {
-//   if (typeof value === 'object' && value !== null) {
-//     const candidate = value as { message?: unknown; toString?: () => string };
-//     if (typeof candidate.message === 'string') return candidate.message;
-//     if (typeof candidate.toString === 'function') return candidate.toString();
-//   }
-//   return String(value);
-// };
-
 const requireAuthId = (ctx: Ctx): string => {
   if (!ctx.authId) throw new Error('authId missing');
   return ctx.authId;

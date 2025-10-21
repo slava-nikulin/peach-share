@@ -1,4 +1,5 @@
 const isHeadless: boolean = process.env.HEADLESS === '1' || process.argv.includes('--headless');
+const insecureOrigins: string[] = ['http://web:5173'];
 
 export const config: WebdriverIO.MultiremoteConfig = {
   //
@@ -58,8 +59,13 @@ export const config: WebdriverIO.MultiremoteConfig = {
         'goog:chromeOptions': {
           args: [
             ...(isHeadless ? ['--headless', '--disable-gpu', '--window-size=1920,1080'] : []),
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
             '--use-fake-ui-for-media-stream',
             '--use-fake-device-for-media-stream',
+            ...insecureOrigins.map(
+              (origin) => `--unsafely-treat-insecure-origin-as-secure=${origin}`,
+            ),
           ],
         },
       },
@@ -70,8 +76,13 @@ export const config: WebdriverIO.MultiremoteConfig = {
         'goog:chromeOptions': {
           args: [
             ...(isHeadless ? ['--headless', '--disable-gpu', '--window-size=1920,1080'] : []),
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
             '--use-fake-ui-for-media-stream',
             '--use-fake-device-for-media-stream',
+            ...insecureOrigins.map(
+              (origin) => `--unsafely-treat-insecure-origin-as-secure=${origin}`,
+            ),
           ],
         },
       },
@@ -121,7 +132,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
   // with `/`, the base url gets prepended, not including the path portion of your baseUrl.
   // If your `url` parameter starts without a scheme or `/` (like `some/path`), the base url
   // gets prepended directly.
-  // baseUrl: 'http://localhost:8080',
+  // baseUrl: 'http://web:5173',
   //
   // Default timeout for all waitFor* commands.
   waitforTimeout: 10000,
