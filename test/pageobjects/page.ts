@@ -7,7 +7,8 @@ const ROLE_TO_INSTANCE: Record<Role, 'OwnerBrowser' | 'GuestBrowser'> = {
   guest: 'GuestBrowser',
 };
 
-export const APP_URL = 'http://web:5173/';
+const fallbackAppUrl = 'http://localhost:5173/';
+export const APP_URL: string = process.env.APP_URL ?? fallbackAppUrl;
 
 export function getBrowserByRole(role: Role): WebdriverIO.Browser {
   return multiremotebrowser.getInstance(ROLE_TO_INSTANCE[role]);

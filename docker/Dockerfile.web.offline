@@ -1,0 +1,26 @@
+FROM node:24-alpine3.22
+WORKDIR /src
+
+RUN apk update && apk add --no-cache bash curl
+RUN corepack enable && corepack prepare pnpm@10.18.2 --activate
+RUN pnpm config set store-dir /var/pnpm-store
+ENV NODE_ENV=production
+
+# 1) только манифесты — максимально кэшируемо
+COPY package.json pnpm-lock.yaml ./
+
+# 2) прогрузить кеш зависимостей в store и установить офлайн
+RUN pnpm fetch --frozen-lockfile \
+ && pnpm install --offline --frozen-lockfile
+
+# 3) исходники и сборка в нужном режиме
+COPY . .
+# если нужен именно .env.emu → укажи явно --mode emu
+RUN pnpm exec vite build --mode emu
+
+# 4) выставить порт и чуть почистить мусор
+EXPOSE 5173
+RUN rm -rf node_modules/.cache && pnpm store prune
+
+# 5) рантайм без внешних скриптов
+CMD ["pnpm","exec","vite","preview","--host","0.0.0.0","--port","5173","--mode","emu"]

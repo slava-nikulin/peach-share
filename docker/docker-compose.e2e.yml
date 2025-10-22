@@ -8,6 +8,7 @@ services:
       VITE_EMULATOR_RTD_HOST: rtdb-emulator
       VITE_EMULATOR_AUTH_HOST: rtdb-emulator
       HEADLESS: "1"
+      APP_URL: http://web:5173/
       # при необходимости: NODE_OPTIONS: "--max_old_space_size=4096"
     depends_on:
       rtdb-emulator:

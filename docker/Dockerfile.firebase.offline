@@ -1,0 +1,26 @@
+FROM node:24-alpine3.22
+
+RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.22/community/" >> /etc/apk/repositories \
+ && apk update && apk add --no-cache openjdk21-jre-headless bash curl
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+ENV PATH="$JAVA_HOME/bin:$PATH"
+ENV FIREBASE_EMULATOR_DOWNLOAD_PATH=/opt/firebase
+ENV XDG_CACHE_HOME=/opt/firebase/.cache
+
+# зафиксируй версию CLI (пример)
+RUN npm i -g firebase-tools@14.12.0
+
+# прогружаем артефакты в слой образа
+RUN mkdir -p /opt/firebase /opt/firebase/.cache \
+ && firebase setup:emulators:database \
+ && firebase setup:emulators:ui
+
+WORKDIR /app
+COPY docker/config/firebase/firebase.json /app/config/firebase.json
+COPY docker/config/firebase/database.rules.json /app/config/database.rules.json
+ENV PROJECT_ID=demo-peach-share
+
+# удобно явно указать порты
+EXPOSE 4000 9000 9099
+
+CMD ["sh","-lc","firebase emulators:start --only database,auth --project \"$PROJECT_ID\" --config /app/config/firebase.json"]

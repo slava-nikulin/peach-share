@@ -1,5 +1,7 @@
 const isHeadless: boolean = process.env.HEADLESS === '1' || process.argv.includes('--headless');
-const insecureOrigins: string[] = ['http://web:5173'];
+const fallbackAppUrl = 'http://localhost:5173/';
+const appUrlFromEnv: string = process.env.APP_URL ?? fallbackAppUrl;
+const insecureOrigins: string[] = [appUrlFromEnv.replace(/\/$/, '')];
 
 export const config: WebdriverIO.MultiremoteConfig = {
   //
