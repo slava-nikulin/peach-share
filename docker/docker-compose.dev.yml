@@ -1,4 +1,8 @@
 services:
+  stun:
+    ports:
+      - '3478:3478/udp'
+      - '3478:3478/tcp'
   rtdb-emulator:
     ports:
       - '4000:4000'
@@ -7,3 +11,4 @@ services:
   web:
     ports:
       - '5173:5173'
+    profiles: ['emu']

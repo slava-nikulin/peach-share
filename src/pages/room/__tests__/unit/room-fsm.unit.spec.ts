@@ -120,7 +120,7 @@ describe('room-fsm component tests', () => {
     const roomMock: RoomRecord = {
       room_id: 'r2',
       owner: 'owner_uid',
-      guestId: 'auth_uid',
+      guest: 'auth_uid',
       created_at: Date.now(),
       updated_at: Date.now(),
     };

@@ -11,7 +11,7 @@ services:
         protocol: udp
       - target: 3478
         protocol: tcp
-    profiles: ['stun', 'emu']
+    profiles: ['stun', 'emu', 'e2e']
 
   rtdb-emulator:
     build:
@@ -27,8 +27,18 @@ services:
       PROJECT_ID: demo-peach-share
       FIREBASE_EMULATOR_DOWNLOAD_PATH: /opt/firebase
       XDG_CACHE_HOME: /opt/firebase/.cache
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'curl -fsS http://localhost:9000/health || curl -fsS http://localhost:9000/.json || nc -z 127.0.0.1 9000',
+        ]
+      interval: 5s
+      timeout: 2s
+      retries: 20
+      start_period: 10s
     entrypoint: ['/app/scripts/emulator-entrypoint.sh']
-    profiles: ['rtdb', 'emu']
+    profiles: ['rtdb', 'emu', 'e2e']
 
   web:
     build:
@@ -43,10 +53,17 @@ services:
       MODE: emu
       CHOKIDAR_USEPOLLING: '1'
       WATCHPACK_POLLING: 'true'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://localhost:5173/']
+      interval: 5s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
     entrypoint: ['/src/docker/scripts/web-entrypoint.sh']
     depends_on:
       - rtdb-emulator
-    profiles: ['dev']
+      - stun
+    profiles: ['dev', 'e2e']
 
 volumes:
   node_modules:

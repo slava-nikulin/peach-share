@@ -1,9 +1,17 @@
-import { ref, runTransaction, serverTimestamp } from 'firebase/database';
+import { type Database, ref, runTransaction, serverTimestamp } from 'firebase/database';
 import { db } from '../config/firebase';
 import type { RoomRecord } from '../types';
 
-export async function createRoom(input: { roomId: string; authId: string }): Promise<RoomRecord> {
-  const roomRef = ref(db, `rooms/${input.roomId}`);
+interface CreateRoomDeps {
+  db?: Database;
+}
+
+export async function createRoom(
+  input: { roomId: string; authId: string },
+  deps: CreateRoomDeps = {},
+): Promise<RoomRecord> {
+  const database = deps.db ?? db;
+  const roomRef = ref(database, `rooms/${input.roomId}`);
   const now = serverTimestamp();
   const payload: RoomRecord = {
     room_id: input.roomId,

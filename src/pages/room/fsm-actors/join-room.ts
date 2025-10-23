@@ -1,5 +1,6 @@
 // src/pages/room/fsm-actors/join-room.ts
 import {
+  type Database,
   type DatabaseReference,
   get,
   onValue,
@@ -36,13 +37,21 @@ async function waitForRoomExists(roomRef: DatabaseReference, timeoutMs: number):
   });
 }
 
-export async function joinRoom(input: {
-  roomId: string;
-  authId: string;
-  timeoutMs?: number;
-}): Promise<RoomRecord> {
+interface JoinRoomDeps {
+  db?: Database;
+}
+
+export async function joinRoom(
+  input: {
+    roomId: string;
+    authId: string;
+    timeoutMs?: number;
+  },
+  deps: JoinRoomDeps = {},
+): Promise<RoomRecord> {
   const { roomId, authId, timeoutMs = 15_000 } = input;
-  const roomRef = ref(db, `rooms/${roomId}`);
+  const database = deps.db ?? db;
+  const roomRef = ref(database, `rooms/${roomId}`);
 
   await waitForRoomExists(roomRef, timeoutMs).catch((e) => {
     if ((e as Error).message === 'room_not_found') throw e;
@@ -52,18 +61,21 @@ export async function joinRoom(input: {
   const res = await runTransaction(
     roomRef,
     (cur: RoomRecord | null) => {
-      if (cur === null) return cur;
-      if (cur.guestId === authId) return { ...cur, updated_at: serverTimestamp() };
-      if (cur.guestId && cur.guestId !== authId) return cur;
-      return { ...cur, guestId: authId, updated_at: serverTimestamp() };
+      if (cur === null) return cur; // нет комнаты
+      if (cur.guest === authId) return { ...cur, updated_at: serverTimestamp() };
+      if (cur.guest && cur.guest !== authId) return cur; // занято
+      return { ...cur, guest: authId, updated_at: serverTimestamp() }; // set-once
     },
     { applyLocally: false },
-  );
+  ).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`joinRoom.runTransaction_failed: ${message}`, { cause: error });
+  });
 
   const after = res.snapshot.val() as RoomRecord | null;
   if (!after) throw new Error('room_missing');
-  if (after.guestId === authId) return after;
-  if (after.guestId && after.guestId !== authId) throw new Error('room_full');
+  if (after.guest === authId) return after;
+  if (after.guest && after.guest !== authId) throw new Error('room_full');
   if (!res.committed) throw new Error('join_conflict');
   throw new Error('join_unknown_state');
 }

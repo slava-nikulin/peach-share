@@ -32,24 +32,6 @@ interface Ctx extends Input {
   lastError?: { at: string; message: string; cause?: unknown };
 }
 
-// helpers
-const toErr = (value: unknown): unknown => {
-  if (typeof value === 'object' && value !== null) {
-    const candidate = value as { error?: unknown; data?: unknown };
-    if (candidate.error !== undefined) return candidate.error;
-    if (candidate.data !== undefined) return candidate.data;
-  }
-  return value;
-};
-const msgOf = (value: unknown): string => {
-  if (typeof value === 'object' && value !== null) {
-    const candidate = value as { message?: unknown; toString?: () => string };
-    if (typeof candidate.message === 'string') return candidate.message;
-    if (typeof candidate.toString === 'function') return candidate.toString();
-  }
-  return String(value);
-};
-
 const requireAuthId = (ctx: Ctx): string => {
   if (!ctx.authId) throw new Error('authId missing');
   return ctx.authId;
@@ -98,13 +80,20 @@ export const roomInitFSM: AnyStateMachine = setup({
       },
     ),
     rtc: fromPromise(
-      async ({ input }: { input: { room: RoomRecord; intent: Intent; encKey: Uint8Array } }) => {
+      async ({
+        input,
+        signal,
+      }: {
+        input: { room: RoomRecord; intent: Intent; encKey: Uint8Array };
+        signal?: AbortSignal;
+      }) => {
         const { endpoint } = await startRTC({
           room: input.room,
           intent: input.intent,
           encKey: input.encKey,
           timeoutMs: 120_000,
           stun: getIceServers(),
+          abortSignal: signal,
         });
         return { rtcReady: true, endpoint };
       },
@@ -179,14 +168,7 @@ export const roomInitFSM: AnyStateMachine = setup({
     vmDHDone: () => {},
     vmRtcDone: () => {},
     vmCleanupDone: () => {},
-    captureError: () =>
-      assign(({ event, context }) => {
-        const err = toErr(event);
-        const payload = { at: context?.__state ?? 'unknown', message: msgOf(err), cause: err };
-        // важный лог в тест-вывод
-        console.error('[FSM ERROR]', payload);
-        return { lastError: payload };
-      }),
+    captureError: () => {},
   },
   guards: {
     isCreate: ({ context }: { context: Input }) => context.intent === 'create',
