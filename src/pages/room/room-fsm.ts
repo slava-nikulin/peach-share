@@ -80,13 +80,20 @@ export const roomInitFSM: AnyStateMachine = setup({
       },
     ),
     rtc: fromPromise(
-      async ({ input }: { input: { room: RoomRecord; intent: Intent; encKey: Uint8Array } }) => {
+      async ({
+        input,
+        signal,
+      }: {
+        input: { room: RoomRecord; intent: Intent; encKey: Uint8Array };
+        signal?: AbortSignal;
+      }) => {
         const { endpoint } = await startRTC({
           room: input.room,
           intent: input.intent,
           encKey: input.encKey,
           timeoutMs: 120_000,
           stun: getIceServers(),
+          abortSignal: signal,
         });
         return { rtcReady: true, endpoint };
       },

@@ -80,10 +80,7 @@ jobs:
           docker info
       - name: Build & Run E2E (Docker Compose)
         run: |
-          docker compose -p peachshare-e2e \
-            -f docker/docker-compose.base.yml \
-            -f docker/docker-compose.e2e.yml \
-            --profile e2e up --build --abort-on-container-exit --exit-code-from e2e-tests
+          run: pnpm test:e2e:wdio:docker
       - name: Teardown
         if: always()
         run: |

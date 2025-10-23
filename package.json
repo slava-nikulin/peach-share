@@ -7,7 +7,6 @@
     "dev": "vite",
     "docker:emu": "docker compose -p peachshare-emu -f docker/docker-compose.base.yml -f docker/docker-compose.dev.yml --profile emu up --build --wait",
     "docker:emu:down": "docker compose -p peachshare-emu -f docker/docker-compose.base.yml -f docker/docker-compose.dev.yml --profile emu down",
-    "docker:e2e:wdio": "docker compose -p peachshare-e2e -f docker/docker-compose.base.yml -f docker/docker-compose.e2e.yml --profile e2e up --build --abort-on-container-exit --exit-code-from e2e-tests",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "biome check .",
@@ -19,6 +18,7 @@
     "test:e2e:vitest": "vitest run --project e2e-vitest",
     "test:e2e:wdio": "wdio run ./wdio.conf.ts",
     "test:e2e:wdio:headless": "HEADLESS=1 wdio run ./wdio.conf.ts",
+    "test:e2e:wdio:docker": "docker compose -p peachshare-e2e -f docker/docker-compose.base.yml -f docker/docker-compose.e2e.yml --profile e2e up --build --abort-on-container-exit --exit-code-from e2e-tests",
     "ci:local": "act -P ubuntu-latest=catthehacker/ubuntu:act-22.04 -e .github/workflows/act.event.json pull_request",
     "check": "./.husky/pre-push"
   },

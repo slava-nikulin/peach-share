@@ -9,6 +9,7 @@ export async function startRTC(input: {
   encKey: Uint8Array;
   timeoutMs: number;
   stun: RTCIceServer[];
+  abortSignal?: AbortSignal;
 }): Promise<{ rtcReady: true; endpoint: RtcEndpoint }> {
   const role = input.intent === 'create' ? 'owner' : 'guest';
   const dbRoomRef = ref(db, `rooms/${input.room.room_id}`);
@@ -19,8 +20,14 @@ export async function startRTC(input: {
     encKey: input.encKey,
     timeoutMs: input.timeoutMs,
     stun: input.stun,
+    abortSignal: input.abortSignal,
   });
 
-  await endpoint.ready;
-  return { rtcReady: true, endpoint };
+  try {
+    await endpoint.ready;
+    return { rtcReady: true, endpoint };
+  } catch (e) {
+    endpoint.close();
+    throw e;
+  }
 }

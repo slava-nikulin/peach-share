@@ -27,6 +27,7 @@ interface WebRTCConnectionOptions {
   timeoutMs: number;
   stun?: RTCIceServer[];
   channelLabel?: string;
+  abortSignal?: AbortSignal;
 }
 
 type SignalingPaths = ReturnType<typeof sigPaths>;
@@ -39,6 +40,7 @@ export class WebRTCConnection implements RtcEndpoint {
   private readonly encKey: Uint8Array;
   private readonly timeoutMs: number;
   private readonly stun?: RTCIceServer[];
+  private readonly abortSignal?: AbortSignal;
   private _channelLabel: string;
 
   private _pc!: RTCPeerConnection;
@@ -58,6 +60,7 @@ export class WebRTCConnection implements RtcEndpoint {
     this.encKey = options.encKey;
     this.timeoutMs = options.timeoutMs;
     this.stun = options.stun;
+    this.abortSignal = options.abortSignal;
     this._channelLabel = options.channelLabel ?? DEFAULT_CHANNEL_LABEL;
   }
 
@@ -117,12 +120,14 @@ export class WebRTCConnection implements RtcEndpoint {
   public readonly onBinary = (fn: (buf: ArrayBuffer) => void): (() => void) => {
     const channel = this.ensureChannel();
     const handler = (event: MessageEvent<unknown>): void => {
-      const payload = normalizeBinaryData(event.data);
-      if (payload) fn(payload);
+      const maybe = normalizeBinaryData(event.data);
+      if (maybe instanceof Promise) {
+        maybe.then((b) => b && fn(b)).catch(() => {});
+      } else if (maybe) fn(maybe);
     };
-
     channel.addEventListener('message', handler);
-    return () => channel.removeEventListener('message', handler);
+    const dispose = (): void => channel.removeEventListener('message', handler);
+    return dispose;
   };
 
   public readonly close = (): void => {
@@ -171,7 +176,14 @@ export class WebRTCConnection implements RtcEndpoint {
         paths: this.paths,
       });
       this._channel = await channelPromise;
-      this.ready = WebRTCConnection.createReadyPromise(this._pc, this._channel);
+      this._channel.binaryType = 'arraybuffer';
+      this.ready = WebRTCConnection.createReadyPromise({
+        pc: this._pc,
+        channel: this._channel,
+        timeoutMs: this.timeoutMs, // используем тот же бюджет
+        onFail: () => this.close(), // общий teardown
+        signal: this.abortSignal, // опционально
+      });
       this.initialized = true;
     } catch (error) {
       this.cleanupOnFailure();
@@ -325,48 +337,76 @@ export class WebRTCConnection implements RtcEndpoint {
     await writeEncrypted(paths.answerRef, aesKey, answer);
   }
 
-  private static createReadyPromise(pc: RTCPeerConnection, channel: RTCDataChannel): Promise<void> {
+  private static makeAbortError(): Error {
+    return typeof DOMException !== 'undefined'
+      ? new DOMException('Aborted', 'AbortError')
+      : new Error('AbortError');
+  }
+
+  private static createReadyPromise(opts: {
+    pc: RTCPeerConnection;
+    channel: RTCDataChannel;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    onFail?: () => void;
+  }): Promise<void> {
+    const { pc, channel, timeoutMs, signal, onFail } = opts;
     return new Promise((resolve, reject) => {
       let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const abortError = WebRTCConnection.makeAbortError();
 
       const cleanup = (): void => {
-        pc.removeEventListener('iceconnectionstatechange', handleIceStateChange);
-        channel.removeEventListener('open', handleChannelOpen);
+        pc.removeEventListener('iceconnectionstatechange', onIce);
+        pc.removeEventListener('connectionstatechange', onConn);
+        channel.removeEventListener('open', onOpen);
+        signal?.removeEventListener('abort', onAbort);
+        if (typeof timer !== 'undefined') clearTimeout(timer);
       };
 
-      const resolveOnce = (): void => {
+      const settle = (ok: boolean, reason?: unknown): void => {
         if (settled) return;
         settled = true;
         cleanup();
-        resolve();
-      };
-
-      const rejectOnce = (): void => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        reject(new Error('ice_failed'));
-      };
-
-      const handleIceStateChange = (): void => {
-        if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
-          resolveOnce();
-        } else if (pc.iceConnectionState === 'failed' || pc.connectionState === 'failed') {
-          rejectOnce();
+        if (ok) {
+          resolve();
+        } else {
+          onFail?.();
+          reject(reason);
         }
       };
 
-      const handleChannelOpen = (): void => {
-        if (channel.readyState === 'open') {
-          resolveOnce();
-        }
+      const onOpen = (): void => {
+        if (channel.readyState === 'open') settle(true);
       };
+      const onIce = (): void => {
+        const s = pc.iceConnectionState;
+        if (s === 'connected' || s === 'completed') settle(true);
+        else if (s === 'failed') settle(false, new Error('ice_failed'));
+      };
+      const onConn = (): void => {
+        const s = pc.connectionState;
+        if (s === 'connected') settle(true);
+        else if (s === 'failed' || s === 'disconnected' || s === 'closed')
+          settle(false, new Error(`conn_${s}`));
+      };
+      const onAbort = (): void => settle(false, abortError);
 
-      pc.addEventListener('iceconnectionstatechange', handleIceStateChange);
-      channel.addEventListener('open', handleChannelOpen);
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
 
-      handleIceStateChange();
-      handleChannelOpen();
+      pc.addEventListener('iceconnectionstatechange', onIce);
+      pc.addEventListener('connectionstatechange', onConn);
+      channel.addEventListener('open', onOpen);
+      signal?.addEventListener('abort', onAbort);
+      if (timeoutMs && timeoutMs > 0)
+        timer = setTimeout(() => settle(false, new Error('ready_timeout')), timeoutMs);
+
+      onIce();
+      onConn();
+      onOpen();
     });
   }
 }
@@ -375,14 +415,36 @@ export async function setupWebRTC(options: WebRTCConnectionOptions): Promise<Rtc
   return WebRTCConnection.create(options);
 }
 
-function normalizeBinaryData(data: unknown): ArrayBuffer | undefined {
-  if (data instanceof ArrayBuffer) {
-    return data;
+function cloneBuffer(
+  source: ArrayBufferLike,
+  byteOffset: number = 0,
+  byteLength?: number,
+): ArrayBuffer {
+  const view = new Uint8Array(source, byteOffset, byteLength ?? source.byteLength - byteOffset);
+  const copy = new Uint8Array(view.length);
+  copy.set(view);
+  return copy.buffer;
+}
+
+function normalizeBinaryData(data: ArrayBuffer | ArrayBufferView): ArrayBuffer;
+function normalizeBinaryData(data: Blob): Promise<ArrayBuffer>;
+function normalizeBinaryData(
+  data: unknown,
+): Promise<ArrayBuffer | undefined> | ArrayBuffer | undefined;
+function normalizeBinaryData(
+  data: unknown,
+): Promise<ArrayBuffer | undefined> | ArrayBuffer | undefined {
+  if (data instanceof ArrayBuffer) return data;
+  if (typeof SharedArrayBuffer !== 'undefined' && data instanceof SharedArrayBuffer) {
+    return cloneBuffer(data);
   }
   if (ArrayBuffer.isView(data)) {
-    const view = data as ArrayBufferView;
-    const source = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
-    return new Uint8Array(source).buffer;
+    const v = data as ArrayBufferView;
+    return cloneBuffer(v.buffer, v.byteOffset, v.byteLength);
+  }
+  if (data instanceof Blob) {
+    // fallback на случай, если binaryType не успели зафиксировать
+    return data.arrayBuffer();
   }
   return undefined;
 }
