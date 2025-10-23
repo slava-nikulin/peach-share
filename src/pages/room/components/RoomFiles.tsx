@@ -3,10 +3,10 @@ import { toFileBus } from '../../../lib/file-bus';
 import type { RtcEndpoint } from '../../../lib/webrtc';
 import { DropOverlay, Dropzone, PeerHeaderSimple } from './room-files/DropZone';
 import { createDragOverlayController } from './room-files/drag-overlay';
+import { FileTransfer } from './room-files/file-transfer';
 import { GuestList } from './room-files/GuestFileList';
 import { MyFileList } from './room-files/MyFileList';
 import {
-  createChunkSender,
   createControlMessageHandler,
   createLocalFilesState,
   createRemoteFilesState,
@@ -18,10 +18,11 @@ export function RoomFiles(props: {
   onDisconnect?: (reason: string) => void;
 }): JSX.Element {
   const bus = toFileBus(props.ep);
+  const transfer = new FileTransfer(props.ep, bus);
   const local = createLocalFilesState(bus);
-  const remote = createRemoteFilesState(bus);
-  const sendChunks = createChunkSender(props.ep, bus);
-  const handleControlMessage = createControlMessageHandler(local, remote, sendChunks);
+  const remote = createRemoteFilesState(bus, transfer);
+  const requestRemoteFile = remote.requestFile.bind(remote);
+  const handleControlMessage = createControlMessageHandler(local, remote, transfer);
 
   const {
     isDragActive,
@@ -33,7 +34,7 @@ export function RoomFiles(props: {
 
   const offJSON = bus.onJSON(handleControlMessage);
   const offBin = bus.onBinary(() => {
-    /* no-op */
+    /* reserved for future binary control */
   });
 
   let teardownGuards: (() => void) | undefined;
@@ -49,6 +50,7 @@ export function RoomFiles(props: {
     teardownGuards?.();
     remote.cleanup();
     cleanupDragState();
+    transfer.dispose();
   });
 
   return (
@@ -76,7 +78,7 @@ export function RoomFiles(props: {
 
       <div class="flex flex-col rounded-2xl border border-white/70 bg-white/70 shadow-sm">
         <PeerHeaderSimple label="Guest" count={remote.files().length} />
-        <GuestList files={remote.files()} onRequest={remote.requestFile} />
+        <GuestList files={remote.files()} onRequest={requestRemoteFile} />
       </div>
     </div>
   );

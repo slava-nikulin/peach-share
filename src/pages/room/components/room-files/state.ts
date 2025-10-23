@@ -1,10 +1,12 @@
 import { type Accessor, createSignal, type Setter } from 'solid-js';
-import { fromBase64Url, toBase64Url } from '../../../../lib/crypto';
 import type { FileBus } from '../../../../lib/file-bus';
 import type { RtcEndpoint } from '../../../../lib/webrtc';
+import type { FileTransfer, FileTransferMeta } from './file-transfer';
+
+type TransferListener = Parameters<FileTransfer['onFile']>[0];
+type TransferEvent = Parameters<TransferListener>[0];
 
 const MAX_FILE_SIZE: number = 200 * 1024 * 1024; // 200MB
-const CHUNK_SIZE: number = 64 * 1024; // 64KB payload
 
 export interface FileMeta {
   id: string;
@@ -23,14 +25,111 @@ export interface LocalFilesState {
   syncWithPeer: () => void;
 }
 
-export interface RemoteFilesState {
-  files: Accessor<RemoteMeta[]>;
-  requestFile: (id: string) => void;
-  handleSync: (files: FileMeta[]) => void;
-  handleAnnounce: (file: FileMeta) => void;
-  handleRemove: (id: string) => void;
-  handleChunk: (chunk: MsgChunk) => void;
-  cleanup: () => void;
+export class RemoteFilesState {
+  public readonly files: Accessor<RemoteMeta[]>;
+
+  private readonly setFiles: Setter<RemoteMeta[]>;
+  private readonly urlRegistry = new Map<string, string>();
+  private readonly removeTransferListener: () => void;
+  private readonly bus: FileBus;
+  private readonly transfer: FileTransfer;
+
+  public constructor(bus: FileBus, transfer: FileTransfer) {
+    this.bus = bus;
+    this.transfer = transfer;
+    const [files, setFiles] = createSignal<RemoteMeta[]>([]);
+    this.files = files;
+    this.setFiles = setFiles;
+    this.removeTransferListener = this.transfer.onFile((event) => this.handleTransferEvent(event));
+  }
+
+  public handleSync(list: FileMeta[]): void {
+    const keepIds = new Set(list.map((file) => file.id));
+    this.revokeMissingUrls(keepIds);
+    this.setFiles(list.map((file) => ({ ...file, downloading: false })));
+  }
+
+  public handleAnnounce(file: FileMeta): void {
+    this.setFiles((prev) => {
+      if (prev.some((existing) => existing.id === file.id)) return prev;
+      return [...prev, { ...file }];
+    });
+  }
+
+  public handleRemove(id: string): void {
+    this.revokeUrl(id);
+    this.setFiles((prev) => prev.filter((file) => file.id !== id));
+  }
+
+  public requestFile(id: string): void {
+    this.setFiles((prev) =>
+      prev.map((file) => (file.id === id ? { ...file, downloading: true, url: file.url } : file)),
+    );
+    this.bus.sendJSON({ type: 'request', id } satisfies MsgRequest);
+  }
+
+  public cleanup(): void {
+    this.removeTransferListener();
+    this.cleanupUrls();
+    this.setFiles([]);
+  }
+
+  private handleTransferEvent(event: TransferEvent): void {
+    if (event.status === 'complete') {
+      const url = URL.createObjectURL(event.blob);
+      const prev = this.urlRegistry.get(event.meta.id);
+      if (prev) URL.revokeObjectURL(prev);
+      this.urlRegistry.set(event.meta.id, url);
+      this.setFiles((prev) =>
+        prev.map((file) =>
+          file.id === event.meta.id ? { ...file, url, downloading: false } : file,
+        ),
+      );
+      return;
+    }
+
+    if (event.status === 'cancelled' || event.status === 'error') {
+      this.setFiles((prev) =>
+        prev.map((file) => (file.id === event.meta.id ? { ...file, downloading: false } : file)),
+      );
+    }
+  }
+
+  private revokeUrl(id: string): void {
+    const existing = this.urlRegistry.get(id);
+    if (existing) {
+      URL.revokeObjectURL(existing);
+      this.urlRegistry.delete(id);
+      return;
+    }
+
+    const record = this.files().find((file) => file.id === id);
+    if (record?.url) URL.revokeObjectURL(record.url);
+  }
+
+  private revokeMissingUrls(keepIds: Set<string>): void {
+    this.files().forEach((file) => {
+      if (!keepIds.has(file.id)) {
+        const stored = this.urlRegistry.get(file.id);
+        if (stored) {
+          URL.revokeObjectURL(stored);
+          this.urlRegistry.delete(file.id);
+        } else if (file.url) {
+          URL.revokeObjectURL(file.url);
+        }
+      }
+    });
+  }
+
+  private cleanupUrls(): void {
+    for (const url of this.urlRegistry.values()) {
+      URL.revokeObjectURL(url);
+    }
+    this.urlRegistry.clear();
+    this.files().forEach((file) => {
+      if (file.url) URL.revokeObjectURL(file.url);
+    });
+  }
 }
 
 interface MsgAnnounce {
@@ -48,20 +147,12 @@ interface MsgRequest {
   id: string;
 }
 
-interface MsgChunk {
-  type: 'chunk';
-  id: string;
-  seq: number;
-  last: boolean;
-  b64: string;
-}
-
 interface MsgSync {
   type: 'sync';
   files: FileMeta[];
 }
 
-type CtrlMsg = MsgAnnounce | MsgRemove | MsgRequest | MsgChunk | MsgSync;
+type CtrlMsg = MsgAnnounce | MsgRemove | MsgRequest | MsgSync;
 
 export function createLocalFilesState(bus: FileBus): LocalFilesState {
   const [files, setFiles] = createSignal<FileMeta[]>([]);
@@ -102,165 +193,19 @@ export function createLocalFilesState(bus: FileBus): LocalFilesState {
   return { files, addFiles, removeFile, fileById, syncWithPeer };
 }
 
-interface ReceiveBufferEntry {
-  chunks: BlobPart[];
-  nextSeq: number;
-}
-
-interface ReceiveBufferRegistry {
-  ensure(id: string): ReceiveBufferEntry;
-  delete(id: string): void;
-  deleteMissing(keepIds: Set<string>): void;
-  clear(): void;
-}
-
-function createReceiveBufferRegistry(): ReceiveBufferRegistry {
-  const buffers = new Map<string, ReceiveBufferEntry>();
-  return {
-    ensure(id: string): ReceiveBufferEntry {
-      let entry = buffers.get(id);
-      if (!entry) {
-        entry = { chunks: [], nextSeq: 0 };
-        buffers.set(id, entry);
-      }
-      return entry;
-    },
-    delete(id: string): void {
-      buffers.delete(id);
-    },
-    deleteMissing(keepIds: Set<string>): void {
-      for (const id of Array.from(buffers.keys())) {
-        if (!keepIds.has(id)) buffers.delete(id);
-      }
-    },
-    clear(): void {
-      buffers.clear();
-    },
-  };
-}
-
-export function createRemoteFilesState(bus: FileBus): RemoteFilesState {
-  const [files, setFiles] = createSignal<RemoteMeta[]>([]);
-  const buffers = createReceiveBufferRegistry();
-
-  const handleSync = createRemoteSyncHandler(files, setFiles, buffers);
-  const handleAnnounce = createRemoteAnnounceHandler(setFiles);
-  const handleRemove = createRemoteRemoveHandler(files, setFiles, buffers);
-  const handleChunk = createRemoteChunkHandler(files, setFiles, buffers);
-  const requestFile = createRemoteRequestHandler(bus, setFiles);
-  const cleanup = createRemoteCleanup(files, buffers, setFiles);
-
-  return { files, requestFile, handleSync, handleAnnounce, handleRemove, handleChunk, cleanup };
-}
-
-function createRemoteSyncHandler(
-  files: Accessor<RemoteMeta[]>,
-  setFiles: Setter<RemoteMeta[]>,
-  buffers: ReceiveBufferRegistry,
-): (list: FileMeta[]) => void {
-  return (list: FileMeta[]) => {
-    const keepIds = new Set(list.map((file) => file.id));
-    revokeMissingUrls(files, keepIds);
-    setFiles(list.map((file) => ({ ...file, downloading: false })));
-    buffers.deleteMissing(keepIds);
-  };
-}
-
-function createRemoteAnnounceHandler(setFiles: Setter<RemoteMeta[]>): (file: FileMeta) => void {
-  return (file: FileMeta) => {
-    setFiles((prev) => {
-      if (prev.some((existing) => existing.id === file.id)) return prev;
-      return [...prev, { ...file }];
-    });
-  };
-}
-
-function createRemoteRemoveHandler(
-  files: Accessor<RemoteMeta[]>,
-  setFiles: Setter<RemoteMeta[]>,
-  buffers: ReceiveBufferRegistry,
-): (id: string) => void {
-  return (id: string) => {
-    revokeRemoteUrl(files, id);
-    buffers.delete(id);
-    setFiles((prev) => prev.filter((file) => file.id !== id));
-  };
-}
-
-function createRemoteChunkHandler(
-  files: Accessor<RemoteMeta[]>,
-  setFiles: Setter<RemoteMeta[]>,
-  buffers: ReceiveBufferRegistry,
-): (chunk: MsgChunk) => void {
-  return (chunk: MsgChunk) => {
-    const entry = buffers.ensure(chunk.id);
-    if (chunk.seq !== entry.nextSeq) return;
-
-    const payload = chunk.b64 ? fromBase64Url(chunk.b64) : new Uint8Array();
-    if (payload.byteLength > 0) entry.chunks.push(payload.slice().buffer);
-    entry.nextSeq += 1;
-
-    if (chunk.last) {
-      revokeRemoteUrl(files, chunk.id);
-      const blob = new Blob(entry.chunks, { type: 'application/octet-stream' });
-      const url = URL.createObjectURL(blob);
-      buffers.delete(chunk.id);
-      setFiles((prev) =>
-        prev.map((file) => (file.id === chunk.id ? { ...file, url, downloading: false } : file)),
-      );
-    }
-  };
-}
-
-function createRemoteRequestHandler(
-  bus: FileBus,
-  setFiles: Setter<RemoteMeta[]>,
-): (id: string) => void {
-  return (id: string) => {
-    setFiles((prev) =>
-      prev.map((file) => (file.id === id ? { ...file, downloading: true, url: file.url } : file)),
-    );
-    bus.sendJSON({ type: 'request', id } satisfies MsgRequest);
-  };
-}
-
-function createRemoteCleanup(
-  files: Accessor<RemoteMeta[]>,
-  buffers: ReceiveBufferRegistry,
-  setFiles: Setter<RemoteMeta[]>,
-): () => void {
-  return () => {
-    cleanupRemoteUrls(files);
-    buffers.clear();
-    setFiles([]);
-  };
-}
-
-function revokeRemoteUrl(files: Accessor<RemoteMeta[]>, id: string): void {
-  const record = files().find((file) => file.id === id);
-  if (record?.url) URL.revokeObjectURL(record.url);
-}
-
-function revokeMissingUrls(files: Accessor<RemoteMeta[]>, keepIds: Set<string>): void {
-  files().forEach((file) => {
-    if (!keepIds.has(file.id) && file.url) URL.revokeObjectURL(file.url);
-  });
-}
-
-function cleanupRemoteUrls(files: Accessor<RemoteMeta[]>): void {
-  files().forEach((file) => {
-    if (file.url) URL.revokeObjectURL(file.url);
-  });
+export function createRemoteFilesState(bus: FileBus, transfer: FileTransfer): RemoteFilesState {
+  return new RemoteFilesState(bus, transfer);
 }
 
 export function createControlMessageHandler(
   local: LocalFilesState,
   remote: RemoteFilesState,
-  sendChunks: (id: string, file: File) => Promise<void>,
+  transfer: FileTransfer,
 ): (msg: unknown) => void {
   return (raw: unknown) => {
     const msg = raw as Partial<CtrlMsg> & { type?: string };
     if (!msg || typeof msg.type !== 'string') return;
+    if (msg.type.startsWith('transfer:')) return;
 
     switch (msg.type) {
       case 'sync':
@@ -272,77 +217,21 @@ export function createControlMessageHandler(
       case 'remove':
         remote.handleRemove((msg as MsgRemove).id);
         break;
-      case 'chunk':
-        remote.handleChunk(msg as MsgChunk);
-        break;
       case 'request': {
         const { id } = msg as MsgRequest;
         const file = local.fileById(id);
-        if (file) void sendChunks(id, file);
+        if (file) {
+          const meta = local.files().find((entry) => entry.id === id);
+          if (meta) {
+            void transfer.send(file, meta as FileTransferMeta).catch(() => {});
+          }
+        }
         break;
       }
       default:
         break;
     }
   };
-}
-
-export function createChunkSender(ep: RtcEndpoint, bus: FileBus) {
-  return async (id: string, file: File): Promise<void> => {
-    let seq = 0;
-    const reader = file.stream().getReader();
-
-    for (;;) {
-      // biome-ignore lint/performance/noAwaitInLoops: sequential read maintains chunk order
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (!value) continue;
-
-      let offset = 0;
-      while (offset < value.byteLength) {
-        const slice = value.subarray(offset, Math.min(offset + CHUNK_SIZE, value.byteLength));
-        // biome-ignore lint/performance/noAwaitInLoops: enforce backpressure before sending next slice
-        await sendJSONChunk(ep, bus, { id, seq, last: false, b64: toBase64Url(slice) });
-        seq += 1;
-        offset += slice.byteLength;
-      }
-    }
-
-    await sendJSONChunk(ep, bus, { id, seq, last: true, b64: '' });
-  };
-}
-
-async function sendJSONChunk(
-  ep: RtcEndpoint,
-  bus: FileBus,
-  chunk: { id: string; seq: number; last: boolean; b64: string },
-): Promise<void> {
-  await waitBufferedLow(ep, 1_000_000);
-  bus.sendJSON({ type: 'chunk', ...chunk } satisfies MsgChunk);
-}
-
-function waitBufferedLow(ep: RtcEndpoint, lowMark: number): Promise<void> {
-  const dc = ep.channel;
-  if (dc.bufferedAmount < lowMark) return Promise.resolve();
-  return new Promise((resolve) => {
-    const handler = (): void => {
-      if (dc.bufferedAmount < lowMark) {
-        dc.removeEventListener('bufferedamountlow', handler);
-        resolve();
-      }
-    };
-    try {
-      dc.bufferedAmountLowThreshold = lowMark;
-    } catch {}
-    dc.addEventListener('bufferedamountlow', handler);
-    const timer = setInterval(() => {
-      if (dc.bufferedAmount < lowMark) {
-        clearInterval(timer);
-        dc.removeEventListener('bufferedamountlow', handler);
-        resolve();
-      }
-    }, 50);
-  });
 }
 
 export function setupConnectionGuards(

@@ -7,7 +7,7 @@ type RefFactory = (db: unknown, path: string) => { path: string };
 
 type RefMock = ReturnType<typeof vi.fn<RefFactory>>;
 
-const { refMock } = vi.hoisted((): { refMock: RefMock } => ({
+const { refMock }: { refMock: RefMock } = vi.hoisted((): { refMock: RefMock } => ({
   refMock: vi.fn<RefFactory>((_db, path) => ({ path })),
 }));
 
