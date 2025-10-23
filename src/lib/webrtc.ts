@@ -230,13 +230,16 @@ export class WebRTCConnection implements RtcEndpoint {
     channelLabel: string,
   ): Promise<RTCDataChannel> {
     if (role === 'owner') {
-      return Promise.resolve(pc.createDataChannel(channelLabel, { ordered: true }));
+      const channel = pc.createDataChannel(channelLabel, { ordered: true });
+      channel.binaryType = 'arraybuffer';
+      return Promise.resolve(channel);
     }
 
     return new Promise((resolve) => {
       const handleDataChannel = (event: RTCDataChannelEvent): void => {
         if (event.channel.label === channelLabel) {
           pc.removeEventListener('datachannel', handleDataChannel);
+          event.channel.binaryType = 'arraybuffer';
           resolve(event.channel);
         }
       };
@@ -268,27 +271,47 @@ export class WebRTCConnection implements RtcEndpoint {
     key: CryptoKey,
     src: DatabaseReference,
   ): () => void {
+    const MAX_Q = 500;
     const q: RTCIceCandidateInit[] = [];
     let rdSet = false;
 
-    pc.addEventListener('signalingstatechange', () => {
+    const flushQueue = (): void => {
+      if (!rdSet) return;
+      while (q.length) {
+        const cand = q.shift();
+        if (!cand) continue;
+        pc.addIceCandidate(new RTCIceCandidate(cand)).catch((err) =>
+          console.warn('addIceCandidate failed', err),
+        );
+      }
+    };
+
+    const handleSignalingStateChange = (): void => {
       if (pc.signalingState === 'stable' || pc.remoteDescription) {
         rdSet = true;
-        while (q.length) {
-          const cand = q.shift();
-          if (!cand) continue;
-          pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
-        }
+        flushQueue();
       }
-    });
+    };
 
-    return onEachEncrypted<RTCIceCandidateInit>(src, key, (cand) => {
+    pc.addEventListener('signalingstatechange', handleSignalingStateChange);
+    handleSignalingStateChange();
+
+    const stopOnEachEncrypted = onEachEncrypted<RTCIceCandidateInit>(src, key, (cand) => {
       if (!rdSet) {
-        q.push(cand);
+        if (q.length < MAX_Q) {
+          q.push(cand);
+        }
         return;
       }
-      pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
+      pc.addIceCandidate(new RTCIceCandidate(cand)).catch((err) =>
+        console.warn('addIceCandidate failed', err),
+      );
     });
+
+    return (): void => {
+      pc.removeEventListener('signalingstatechange', handleSignalingStateChange);
+      stopOnEachEncrypted();
+    };
   }
 
   private static async exchangeDescriptions({

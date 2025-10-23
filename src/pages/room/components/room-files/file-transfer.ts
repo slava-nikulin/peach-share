@@ -695,27 +695,68 @@ export class FileTransfer {
     channel.send(buffer);
   }
 
-  private waitForBufferedLow(channel: RTCDataChannel): Promise<number> {
-    return new Promise<number>((resolve) => {
+  private waitForBufferedLow(
+    channel: RTCDataChannel,
+    opts?: { timeoutMs?: number; signal?: AbortSignal },
+  ): Promise<number> {
+    return new Promise<number>((resolve, reject) => {
       const start = this.now();
-      const threshold = this.opts.lowWaterMark;
+      const threshold = this.opts.lowWaterMark >>> 0; // ensure non-negative
       channel.bufferedAmountLowThreshold = threshold;
-      if (channel.bufferedAmount < threshold) {
+
+      if (channel.bufferedAmount <= threshold) {
         resolve(0);
         return;
       }
-      const handler = (): void => {
-        if (channel.bufferedAmount < threshold) {
-          cleanup();
-          resolve(this.now() - start);
-        }
+      let settled = false;
+      let fallbackId: number | undefined;
+      let timeoutId: number | undefined;
+      const settleOk = (): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(this.now() - start);
       };
+      const settleErr = (e: unknown): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(e instanceof Error ? e : new Error(String(e)));
+      };
+      const handler = (_event?: Event): void => {
+        if (channel.bufferedAmount <= threshold) settleOk();
+      };
+      const onCloseOrError = (_event?: Event): void => {
+        if (channel.bufferedAmount <= threshold) settleOk();
+        else settleErr(new Error('datachannel_closed'));
+      };
+
+      const onAbort = (_event?: Event): void =>
+        settleErr(new DOMException('Aborted', 'AbortError'));
       const cleanup = (): void => {
         channel.removeEventListener('bufferedamountlow', handler);
-        clearInterval(fallback);
+        channel.removeEventListener('close', onCloseOrError);
+        channel.removeEventListener('error', onCloseOrError);
+        opts?.signal?.removeEventListener('abort', onAbort);
+        if (fallbackId) clearInterval(fallbackId);
+        if (timeoutId) clearTimeout(timeoutId);
       };
-      channel.addEventListener('bufferedamountlow', handler);
-      const fallback = setInterval(handler, 50);
+
+      channel.addEventListener('bufferedamountlow', handler, { once: true });
+      channel.addEventListener('close', onCloseOrError, { once: true });
+      channel.addEventListener('error', onCloseOrError, { once: true });
+      fallbackId = setInterval(handler, 50) as unknown as number;
+      if (opts?.timeoutMs && opts.timeoutMs > 0) {
+        timeoutId = setTimeout(
+          () => settleErr(new Error('buffer_low_timeout')),
+          opts.timeoutMs,
+        ) as unknown as number;
+      }
+      if (opts?.signal) {
+        if (opts.signal.aborted) onAbort();
+        else opts.signal.addEventListener('abort', onAbort, { once: true });
+      }
+      handler();
     });
   }
 
