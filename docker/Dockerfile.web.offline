@@ -1,26 +1,36 @@
-FROM node:24-alpine3.22
-WORKDIR /src
+FROM node:24-alpine3.22 AS pnpm-base
+WORKDIR /app
+ENV PNPM_HOME="/usr/local/share/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN apk add --no-cache bash curl \
+ && corepack enable \
+ && corepack prepare pnpm@10.18.2 --activate \
+ && pnpm config set store-dir /pnpm-store
 
-RUN apk update && apk add --no-cache bash curl
-RUN corepack enable && corepack prepare pnpm@10.18.2 --activate
-RUN pnpm config set store-dir /var/pnpm-store
+FROM pnpm-base AS deps
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm fetch --frozen-lockfile
+
+FROM pnpm-base AS builder
+COPY --from=deps /pnpm-store /pnpm-store
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --offline --frozen-lockfile
+COPY . .
+RUN pnpm exec vite build --mode emu \
+ && pnpm store prune \
+ && rm -rf node_modules
+
+FROM node:24-alpine3.22 AS runner
+WORKDIR /app
+RUN apk add --no-cache bash
 ENV NODE_ENV=production
 
-# 1) только манифесты — максимально кэшируемо
-COPY package.json pnpm-lock.yaml ./
+COPY --from=builder /app/dist ./dist
+COPY docker/scripts/offline-entrypoint.sh ./docker/scripts/offline-entrypoint.sh
+COPY docker/scripts/serve-dist.mjs ./docker/scripts/serve-dist.mjs
 
-# 2) прогрузить кеш зависимостей в store и установить офлайн
-RUN pnpm fetch --frozen-lockfile \
- && pnpm install --offline --frozen-lockfile
+RUN chmod +x docker/scripts/offline-entrypoint.sh
 
-# 3) исходники и сборка в нужном режиме
-COPY . .
-# если нужен именно .env.emu → укажи явно --mode emu
-RUN pnpm exec vite build --mode emu
-
-# 4) выставить порт и чуть почистить мусор
 EXPOSE 5173
-RUN rm -rf node_modules/.cache && pnpm store prune
 
-# 5) рантайм без внешних скриптов
-CMD ["pnpm","exec","vite","preview","--host","0.0.0.0","--port","5173","--mode","emu"]
+ENTRYPOINT ["docker/scripts/offline-entrypoint.sh"]

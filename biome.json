@@ -158,7 +158,12 @@
       }
     },
     {
-      "includes": ["src/tests/**/*.ts", "test/**/*.ts", "*.config.ts"],
+      "includes": [
+        "src/tests/**/*.ts",
+        "test/**/*.ts",
+        "*.config.ts",
+        "docker/scripts/serve-dist.mjs"
+      ],
       "linter": {
         "rules": {
           "style": {

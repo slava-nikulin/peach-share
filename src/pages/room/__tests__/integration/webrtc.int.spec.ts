@@ -9,6 +9,7 @@ import {
   createTestFirebaseUser,
   type TestFirebaseUserCtx,
 } from '../../../../tests/utils/firebase-user';
+import { RoomCleaner } from '../../fsm-actors/cleanup';
 import { createRoom } from '../../fsm-actors/create-room';
 import { joinRoom } from '../../fsm-actors/join-room';
 
@@ -148,6 +149,21 @@ describe('WebRTCConnection integration', () => {
 
     owner.close();
     guest.close();
+
+    const ownerGoOffline = vi.fn();
+    const guestGoOffline = vi.fn();
+
+    const ownerCleaner = new RoomCleaner({ database: ownerCtx.db, goOfflineFn: ownerGoOffline });
+    const guestCleaner = new RoomCleaner({ database: guestCtx.db, goOfflineFn: guestGoOffline });
+
+    await ownerCleaner.cleanup(roomId);
+    await guestCleaner.cleanup(roomId);
+
+    expect(ownerGoOffline).toHaveBeenCalledWith(ownerCtx.db);
+    expect(guestGoOffline).toHaveBeenCalledWith(guestCtx.db);
+
+    const roomSnap = await get(ownerRoomRef);
+    expect(roomSnap.exists()).toBe(false);
   }, 180_000);
 
   it('очередь ICE-кандидатов до setRemoteDescription: соединение устанавливается', async () => {

@@ -1,9 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
+import { goOffline, remove } from 'firebase/database';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActor } from 'xstate';
 import { fromPromise } from 'xstate/actors';
 import type { RtcEndpoint } from '../../../../lib/webrtc';
 import { roomInitFSM } from '../../room-fsm';
 import type { RoomRecord } from '../../types';
+
+vi.mock('firebase/database', async () => {
+  const actual = await vi.importActual<typeof import('firebase/database')>('firebase/database');
+  return {
+    ...actual,
+    remove: vi.fn(async () => {}),
+    goOffline: vi.fn(),
+  };
+});
 
 const noopUnsubscribe = (): void => undefined;
 
@@ -19,6 +29,14 @@ const dummyEp = (): RtcEndpoint => ({
 });
 
 describe('room-fsm component tests', () => {
+  const removeMock = vi.mocked(remove);
+  const goOfflineMock = vi.mocked(goOffline);
+
+  beforeEach(() => {
+    removeMock.mockClear();
+    goOfflineMock.mockClear();
+  });
+
   const enc32 = (v: number = 7): Uint8Array => new Uint8Array(32).fill(v);
 
   it('happy path (create): auth → create → dh → rtc → cleanup → done', async () => {
@@ -28,7 +46,8 @@ describe('room-fsm component tests', () => {
       joinRoom: vi.fn(),
       vmRoomReady: vi.fn(),
       vmDHDone: vi.fn(),
-      vmRtcDone: vi.fn(), // NEW
+      vmRtcDone: vi.fn(),
+      vmCleanupDone: vi.fn(),
     };
 
     const roomMock: RoomRecord = {
@@ -54,13 +73,13 @@ describe('room-fsm component tests', () => {
           return { roomReady: true, room: roomMock };
         }),
         dh: fromPromise(async () => ({ encKey: enc32(1), sas: '123456' })),
-        rtc: fromPromise(async () => ({ rtcReady: true, endpoint: ep })), // NEW
-        cleanup: fromPromise(async () => ({ cleanupDone: true })),
+        rtc: fromPromise(async () => ({ rtcReady: true, endpoint: ep })),
       },
       actions: {
         vmRoomReady: () => called.vmRoomReady(),
         vmDHDone: () => called.vmDHDone(),
-        vmRtcDone: () => called.vmRtcDone(), // NEW
+        vmRtcDone: () => called.vmRtcDone(),
+        vmCleanupDone: () => called.vmCleanupDone(),
       },
     });
 
@@ -104,6 +123,13 @@ describe('room-fsm component tests', () => {
     expect(snap.context.rtcEndPoint).toBe(ep);
     expect(called.vmRtcDone).toHaveBeenCalledTimes(1);
 
+    expect(called.vmCleanupDone).toHaveBeenCalledTimes(1);
+    expect(removeMock).toHaveBeenCalledTimes(1);
+    const cleanupRef = removeMock.mock.calls[0]?.[0] as { key?: string; parent?: { key?: string } };
+    expect(cleanupRef?.key).toBe('r1');
+    expect(cleanupRef?.parent?.key).toBe('rooms');
+    expect(goOfflineMock).toHaveBeenCalledTimes(1);
+
     actor.stop();
   });
 
@@ -114,7 +140,8 @@ describe('room-fsm component tests', () => {
       joinRoom: vi.fn(),
       vmRoomReady: vi.fn(),
       vmDHDone: vi.fn(),
-      vmRtcDone: vi.fn(), // NEW
+      vmRtcDone: vi.fn(),
+      vmCleanupDone: vi.fn(),
     };
 
     const roomMock: RoomRecord = {
@@ -141,13 +168,13 @@ describe('room-fsm component tests', () => {
           return { roomReady: true, room: roomMock };
         }),
         dh: fromPromise(async () => ({ encKey: enc32(2), sas: '654321' })),
-        rtc: fromPromise(async () => ({ rtcReady: true, endpoint: ep })), // NEW
-        cleanup: fromPromise(async () => ({ cleanupDone: true })),
+        rtc: fromPromise(async () => ({ rtcReady: true, endpoint: ep })),
       },
       actions: {
         vmRoomReady: () => called.vmRoomReady(),
         vmDHDone: () => called.vmDHDone(),
-        vmRtcDone: () => called.vmRtcDone(), // NEW
+        vmRtcDone: () => called.vmRtcDone(),
+        vmCleanupDone: () => called.vmCleanupDone(),
       },
     });
 
@@ -190,6 +217,13 @@ describe('room-fsm component tests', () => {
     // NEW: setRtcEndpoint + vmRtcDone
     expect(snap.context.rtcEndPoint).toBe(ep);
     expect(called.vmRtcDone).toHaveBeenCalledTimes(1);
+
+    expect(called.vmCleanupDone).toHaveBeenCalledTimes(1);
+    expect(removeMock).toHaveBeenCalledTimes(1);
+    const cleanupRef = removeMock.mock.calls[0]?.[0] as { key?: string; parent?: { key?: string } };
+    expect(cleanupRef?.key).toBe('r2');
+    expect(cleanupRef?.parent?.key).toBe('rooms');
+    expect(goOfflineMock).toHaveBeenCalledTimes(1);
 
     actor.stop();
   });

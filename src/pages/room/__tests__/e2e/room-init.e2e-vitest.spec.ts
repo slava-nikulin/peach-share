@@ -1,4 +1,4 @@
-import { type Database, get, ref, remove } from 'firebase/database';
+import { type Database, get, goOffline, ref, remove } from 'firebase/database';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { toBase64Url } from '../../../../lib/crypto';
 import type { RtcEndpoint } from '../../../../lib/webrtc';
@@ -7,20 +7,18 @@ import { startEmu, stopEmu } from '../../../../tests/setup/testcontainers';
 import type { RoomInitActor } from '../../room-fsm';
 import type { RoomRecord } from '../../types';
 
+vi.mock('firebase/database', async () => {
+  const actual = await vi.importActual<typeof import('firebase/database')>('firebase/database');
+  return {
+    ...actual,
+    goOffline: vi.fn(),
+  };
+});
+
 type StartRoomFlow = typeof import('../../room-init').startRoomFlow;
 type RoomInitSnapshot = ReturnType<RoomInitActor['getSnapshot']>;
-interface DHSnapshot {
-  owner: { msg_b64: string; nonce_b64: string };
-  guest: { msg_b64: string; nonce_b64: string };
-  mac: {
-    owner: { mac_b64: string };
-    guest: { mac_b64: string };
-  };
-  status: { ok: boolean };
-}
 
 const SIX_DIGIT_REGEX = /^\d{6}$/;
-const NON_EMPTY_REGEX = /\S/;
 
 const timeout = (label: string, ms: number): Promise<never> =>
   new Promise<never>((_, reject) => {
@@ -73,6 +71,7 @@ describe('room init e2e (concurrent)', () => {
   let cleanupEnv: { restore: () => void };
 
   let startRoomFlow: StartRoomFlow;
+  const goOfflineMock = vi.mocked(goOffline);
 
   const createdRoomIds: string[] = [];
 
@@ -89,6 +88,7 @@ describe('room init e2e (concurrent)', () => {
 
     vi.resetModules();
 
+    goOfflineMock.mockClear();
     ({ db } = await import('../../config/firebase'));
     ({ startRoomFlow } = await import('../../room-init'));
   }, 240_000);
@@ -96,7 +96,7 @@ describe('room init e2e (concurrent)', () => {
   afterEach(async () => {
     if (!db || createdRoomIds.length === 0) return;
     const ids = createdRoomIds.splice(0);
-    await Promise.all(ids.map((roomId) => remove(ref(db, `rooms/${roomId}`))));
+    await Promise.all(ids.map((roomId) => remove(ref(db, `rooms/${roomId}`)).catch(() => {})));
   }, 60_000);
 
   afterAll(async () => {
@@ -138,8 +138,7 @@ describe('room init e2e (concurrent)', () => {
     expect(jRoom.owner).toBe(cRoom.owner);
 
     const stored = await readRoom(db, roomId);
-    expect(stored?.room_id).toBe(roomId);
-    expect(stored?.owner).toBe(cRoom.owner);
+    expect(stored).toBeNull();
 
     // --- DH: проверяем результат в контексте
     expect(cCtx.encKey).toBeDefined();
@@ -152,26 +151,9 @@ describe('room init e2e (concurrent)', () => {
     expect(cCtx.sas).toMatch(SIX_DIGIT_REGEX);
     expect(cCtx.sas).toBe(jCtx.sas);
 
-    // --- DH: проверяем артефакты в RTDB
     const dhPath = `rooms/${roomId}/dh`;
     const dhSnap = await get(ref(db, dhPath));
-    expect(dhSnap.exists()).toBe(true);
-
-    const dh = dhSnap.val() as DHSnapshot;
-
-    // handshakes
-    expect(typeof dh.owner?.msg_b64).toBe('string');
-    expect(typeof dh.owner?.nonce_b64).toBe('string');
-    expect(typeof dh.guest?.msg_b64).toBe('string');
-    expect(typeof dh.guest?.nonce_b64).toBe('string');
-
-    // macs
-    expect(typeof dh.mac?.owner?.mac_b64).toBe('string');
-    expect(typeof dh.mac?.guest?.mac_b64).toBe('string');
-    expect(dh.mac.owner.mac_b64).not.toBe(dh.mac.guest.mac_b64); // метки A/B различны
-
-    // статус
-    expect(dh.status?.ok).toBe(true);
+    expect(dhSnap.exists()).toBe(false);
 
     //viewModel
     // Флаги пайплайна
@@ -183,6 +165,12 @@ describe('room init e2e (concurrent)', () => {
 
     expect(cVM.isCleanupDone()).toBe(true);
     expect(jVM.isCleanupDone()).toBe(true);
+
+    const creatorCleanupLabel = `Cleanup: ${cVM.isCleanupDone() ? 'done' : 'pending'}`;
+    const joinerCleanupLabel = `Cleanup: ${jVM.isCleanupDone() ? 'done' : 'pending'}`;
+    expect(creatorCleanupLabel).toBe('Cleanup: done');
+    expect(joinerCleanupLabel).toBe('Cleanup: done');
+    expect(goOfflineMock.mock.calls.length).toBeGreaterThanOrEqual(2);
 
     expect(cVM.isRtcReady()).toBe(true);
     expect(jVM.isRtcReady()).toBe(true);
@@ -201,28 +189,9 @@ describe('room init e2e (concurrent)', () => {
     expect(jVM.sas()).toMatch(SIX_DIGIT_REGEX);
     expect(cVM.sas()).toBe(jVM.sas());
 
-    // --- WebRTC signaling в RTDB
     const wrtcBase = `rooms/${roomId}/webrtc`;
-
-    // offer от owner
-    const offerOwner = await get(ref(db, `${wrtcBase}/offer/owner`));
-    expect(offerOwner.exists()).toBe(true);
-    expect(offerOwner.val()?.msg_b64).toMatch(NON_EMPTY_REGEX);
-    expect(offerOwner.val()?.nonce_b64).toMatch(NON_EMPTY_REGEX);
-
-    // answer от guest
-    const answerGuest = await get(ref(db, `${wrtcBase}/answer/guest`));
-    expect(answerGuest.exists()).toBe(true);
-    expect(answerGuest.val()?.msg_b64).toMatch(NON_EMPTY_REGEX);
-    expect(answerGuest.val()?.nonce_b64).toMatch(NON_EMPTY_REGEX);
-
-    // ICE-кандидаты обеих сторон (хватает >=1)
-    const candsOwner = await get(ref(db, `${wrtcBase}/candidates/owner`));
-    const candsGuest = await get(ref(db, `${wrtcBase}/candidates/guest`));
-    expect(candsOwner.exists()).toBe(true);
-    expect(candsGuest.exists()).toBe(true);
-    expect(Object.keys(candsOwner.val() ?? {})).not.toHaveLength(0);
-    expect(Object.keys(candsGuest.val() ?? {})).not.toHaveLength(0);
+    const webrtcSnap = await get(ref(db, wrtcBase));
+    expect(webrtcSnap.exists()).toBe(false);
 
     // --- WebRTC DataChannel: JSON round-trip
     const cEp = (cCtx as { rtcEndPoint?: RtcEndpoint }).rtcEndPoint;

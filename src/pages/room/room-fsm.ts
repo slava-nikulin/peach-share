@@ -8,9 +8,9 @@ import {
   setup,
 } from 'xstate';
 import type { RtcEndpoint } from '../../lib/webrtc';
-import { delay } from '../../util/time';
 import { getIceServers } from './config/ice';
 import { anonAuth } from './fsm-actors/auth';
+import { RoomCleaner } from './fsm-actors/cleanup';
 import { createRoom } from './fsm-actors/create-room';
 import { startDH } from './fsm-actors/dh';
 import { joinRoom } from './fsm-actors/join-room';
@@ -98,10 +98,13 @@ export const roomInitFSM: AnyStateMachine = setup({
         return { rtcReady: true, endpoint };
       },
     ),
-    cleanup: fromPromise(async () => {
-      await delay(2000);
-      return { cleanupDone: true };
-    }),
+    cleanup: fromPromise(
+      async ({ input }: { input: { roomId: string } }): Promise<{ cleanupDone: true }> => {
+        const roomCleaner: RoomCleaner = new RoomCleaner();
+        await roomCleaner.cleanup(input.roomId);
+        return { cleanupDone: true };
+      },
+    ),
   },
   actions: {
     vmAuthDone: () => {},
@@ -267,6 +270,9 @@ export const roomInitFSM: AnyStateMachine = setup({
       tags: ['cleanup'],
       invoke: {
         src: 'cleanup',
+        input: ({ context }: { context: Ctx }): { roomId: string } => ({
+          roomId: context.roomId,
+        }),
         onDone: { target: 'done', actions: 'vmCleanupDone' },
         onError: { target: '#room-fsm.failed', actions: 'captureError' },
       },

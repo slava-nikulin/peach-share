@@ -16,7 +16,7 @@ RTDB_DF="$REPO_ROOT/docker/Dockerfile.firebase.offline"
 # echo "$GH_PAT" | docker login ghcr.io -u slava-nikulin --password-stdin
 
 docker build -f "$WEB_DF" -t "ghcr.io/$OWNER/$REPO/web-offline:$TAG" "$REPO_ROOT"
-docker build -f "$RTDB_DF" -t "ghcr.io/$OWNER/$REPO/rtdb-emulator-offline:$TAG" "$REPO_ROOT"
+# docker build -f "$RTDB_DF" -t "ghcr.io/$OWNER/$REPO/rtdb-emulator-offline:$TAG" "$REPO_ROOT"
 
-docker push "ghcr.io/$OWNER/$REPO/web-offline:$TAG"
-docker push "ghcr.io/$OWNER/$REPO/rtdb-emulator-offline:$TAG"
+# docker push "ghcr.io/$OWNER/$REPO/web-offline:$TAG"
+# docker push "ghcr.io/$OWNER/$REPO/rtdb-emulator-offline:$TAG"
