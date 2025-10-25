@@ -156,8 +156,8 @@ describe('WebRTCConnection integration', () => {
     const ownerCleaner = new RoomCleaner({ database: ownerCtx.db, goOfflineFn: ownerGoOffline });
     const guestCleaner = new RoomCleaner({ database: guestCtx.db, goOfflineFn: guestGoOffline });
 
-    await ownerCleaner.cleanup(roomId);
-    await guestCleaner.cleanup(roomId);
+    await ownerCleaner.cleanup(roomId, { removeRoom: true });
+    await guestCleaner.cleanup(roomId, { removeRoom: false });
 
     expect(ownerGoOffline).toHaveBeenCalledWith(ownerCtx.db);
     expect(guestGoOffline).toHaveBeenCalledWith(guestCtx.db);

@@ -99,9 +99,13 @@ export const roomInitFSM: AnyStateMachine = setup({
       },
     ),
     cleanup: fromPromise(
-      async ({ input }: { input: { roomId: string } }): Promise<{ cleanupDone: true }> => {
+      async ({
+        input,
+      }: {
+        input: { roomId: string; removeRoom: boolean };
+      }): Promise<{ cleanupDone: true }> => {
         const roomCleaner: RoomCleaner = new RoomCleaner();
-        await roomCleaner.cleanup(input.roomId);
+        await roomCleaner.cleanup(input.roomId, { removeRoom: input.removeRoom });
         return { cleanupDone: true };
       },
     ),
@@ -270,8 +274,9 @@ export const roomInitFSM: AnyStateMachine = setup({
       tags: ['cleanup'],
       invoke: {
         src: 'cleanup',
-        input: ({ context }: { context: Ctx }): { roomId: string } => ({
+        input: ({ context }: { context: Ctx }): { roomId: string; removeRoom: boolean } => ({
           roomId: context.roomId,
+          removeRoom: !!(context.room && context.authId && context.room.owner === context.authId),
         }),
         onDone: { target: 'done', actions: 'vmCleanupDone' },
         onError: { target: '#room-fsm.failed', actions: 'captureError' },

@@ -1,6 +1,6 @@
 import type { Database } from 'firebase/database';
 import { goOffline, ref, remove } from 'firebase/database';
-import { db } from '../config/firebase';
+import { firebaseEnv } from '../config/firebase';
 
 export interface RoomCleanerDeps {
   database?: Database;
@@ -9,31 +9,37 @@ export interface RoomCleanerDeps {
 }
 
 export class RoomCleaner {
-  private readonly database: Database;
+  private readonly database?: Database;
   private readonly removeFn: typeof remove;
-  private readonly goOfflineFn: typeof goOffline;
+  private readonly goOfflineFn?: typeof goOffline;
 
   constructor(deps: RoomCleanerDeps = {}) {
-    this.database = deps.database ?? db;
+    this.database = deps.database;
     this.removeFn = deps.removeFn ?? remove;
     this.goOfflineFn = deps.goOfflineFn ?? goOffline;
   }
 
-  async cleanup(roomId: string): Promise<void> {
+  async cleanup(roomId: string, options?: { removeRoom?: boolean }): Promise<void> {
+    const shouldRemove = options?.removeRoom ?? true;
+    const database = this.database ?? firebaseEnv.db;
     try {
-      if (roomId) {
-        await this.removeFn(ref(this.database, `rooms/${roomId}`));
+      if (shouldRemove && roomId) {
+        await this.removeFn(ref(database, `rooms/${roomId}`));
       }
     } catch (error) {
       console.warn('Room cleanup error:', error);
     } finally {
-      this.goOfflineSafe();
+      if (this.database) {
+        this.goOfflineSafe(database);
+      } else {
+        firebaseEnv.cleanup();
+      }
     }
   }
 
-  private goOfflineSafe(): void {
+  private goOfflineSafe(database: Database): void {
     try {
-      this.goOfflineFn(this.database);
+      this.goOfflineFn?.(database);
     } catch (goOfflineError) {
       console.warn('Room goOffline error:', goOfflineError);
     }

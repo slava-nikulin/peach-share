@@ -20,17 +20,14 @@ RUN pnpm exec vite build --mode emu \
  && pnpm store prune \
  && rm -rf node_modules
 
-FROM node:24-alpine3.22 AS runner
-WORKDIR /app
-RUN apk add --no-cache bash
-ENV NODE_ENV=production
+FROM nginx:1.29.2-alpine AS runner
+WORKDIR /usr/share/nginx/html
 
-COPY --from=builder /app/dist ./dist
-COPY docker/scripts/offline-entrypoint.sh ./docker/scripts/offline-entrypoint.sh
-COPY docker/scripts/serve-dist.mjs ./docker/scripts/serve-dist.mjs
+COPY --from=builder /app/dist ./
+COPY docker/scripts/web-entrypoint-offline.sh /docker/scripts/web-entrypoint-offline.sh
 
-RUN chmod +x docker/scripts/offline-entrypoint.sh
+RUN chmod +x /docker/scripts/web-entrypoint-offline.sh
 
 EXPOSE 5173
 
-ENTRYPOINT ["docker/scripts/offline-entrypoint.sh"]
+ENTRYPOINT ["/docker/scripts/web-entrypoint-offline.sh"]

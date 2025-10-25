@@ -1,26 +1,86 @@
-FROM node:24-alpine3.22
+# ---------- Stage 1: builder ----------
+FROM node:24-alpine3.22 AS builder
 
+# Alpine: включаем community и ставим зависимости для CLI и эмуляторов
 RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.22/community/" >> /etc/apk/repositories \
- && apk update && apk add --no-cache openjdk21-jre-headless bash curl
+ && apk add --no-cache openjdk21-jre-headless bash curl
+
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 ENV PATH="$JAVA_HOME/bin:$PATH"
-ENV FIREBASE_EMULATOR_DOWNLOAD_PATH=/opt/firebase
-ENV XDG_CACHE_HOME=/opt/firebase/.cache
+ENV NODE_PATH=/usr/local/lib/node_modules
 
-# зафиксируй версию CLI (пример)
-RUN npm i -g firebase-tools@14.12.0
+# Куда firebase-tools будет скачивать бинарники эмуляторов.
+# По умолчанию CLI кладёт их в ~/.cache/firebase/emulators,
+# но переменная окружения может переопределить путь. :contentReference[oaicite:4]{index=4}
+ENV FIREBASE_EMULATORS_PATH=/opt/firebase
 
-# прогружаем артефакты в слой образа
-RUN mkdir -p /opt/firebase /opt/firebase/.cache \
- && firebase setup:emulators:database \
- && firebase setup:emulators:ui
-
-WORKDIR /app
-COPY docker/config/firebase/firebase.json /app/config/firebase.json
-COPY docker/config/firebase/database.rules.json /app/config/database.rules.json
+# Demo project ID. Можно переопределить через env в docker compose.
 ENV PROJECT_ID=demo-peach-share
 
-# удобно явно указать порты
+# Устанавливаем фиксированную версию firebase-tools (CLI)
+RUN npm i -g firebase-tools@14.12.0
+
+# Готовим каталоги
+RUN mkdir -p /opt/firebase /app/config /tmp/dummy
+
+# Конфиги эмуляторов внутрь образа
+COPY docker/config/firebase/firebase-offline.json /app/config/firebase-offline.json
+COPY docker/config/firebase/database.rules.json /app/config/database.rules.json
+
+WORKDIR /app
+
+# Прогрев:
+# 1. Стартуем нужные эмуляторы в фоне.
+#    "emulators:start" скачает jar'ы / бинарники в FIREBASE_EMULATORS_PATH,
+#    если их нет. :contentReference[oaicite:5]{index=5}
+# 2. Даём им время докачать.
+# 3. Убиваем процессы, чтобы билд не завис.
+RUN firebase emulators:start \
+      --only "database,auth" \
+      --project "$PROJECT_ID" \
+      --config /app/config/firebase-offline.json \
+      --import /tmp/dummy \
+      --export-on-exit /tmp/dummy \
+    & FB_PID=$!; \
+    sleep 10; \
+    kill "$FB_PID" || true; \
+    pkill -f "java" || true; \
+    pkill -f "firebase-tools" || true
+
+# ---------- Stage 2: runtime ----------
+FROM alpine:3.22 AS runtime
+
+# Нам нужен только рантайм: JRE для Realtime Database эмулятора (он на Java),
+# плюс bash/curl как утилиты.
+RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.22/community/" >> /etc/apk/repositories \
+ && apk add --no-cache \
+      openjdk21-jre-headless \
+      bash \
+      curl \
+      libstdc++ \
+      libgcc
+
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+ENV PATH="$JAVA_HOME/bin:$PATH"
+
+# Совпадает с builder. Firebase CLI будет смотреть сюда и НЕ будет пытаться скачивать заново.
+ENV FIREBASE_EMULATORS_PATH=/opt/firebase
+ENV NODE_PATH=/usr/local/lib/node_modules
+ENV PROJECT_ID=demo-peach-share
+
+# Копируем node и firebase-tools из builder
+COPY --from=builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
+
+# Удобный ярлык firebase CLI
+RUN ln -sf ../lib/node_modules/firebase-tools/lib/bin/firebase.js /usr/local/bin/firebase
+
+# Копируем уже скачанные бинарники эмулятора (JAR и т.д.) и конфиг
+COPY --from=builder /opt/firebase /opt/firebase
+COPY --from=builder /app/config /app/config
+
+WORKDIR /app
+
 EXPOSE 4000 9000 9099
 
-CMD ["sh","-lc","firebase emulators:start --only database,auth --project \"$PROJECT_ID\" --config /app/config/firebase.json"]
+CMD ["sh","-lc","firebase emulators:start --only \"database,auth\" --project \"$PROJECT_ID\" --config /app/config/firebase-offline.json"]

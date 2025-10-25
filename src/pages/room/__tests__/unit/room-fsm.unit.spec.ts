@@ -219,10 +219,7 @@ describe('room-fsm component tests', () => {
     expect(called.vmRtcDone).toHaveBeenCalledTimes(1);
 
     expect(called.vmCleanupDone).toHaveBeenCalledTimes(1);
-    expect(removeMock).toHaveBeenCalledTimes(1);
-    const cleanupRef = removeMock.mock.calls[0]?.[0] as { key?: string; parent?: { key?: string } };
-    expect(cleanupRef?.key).toBe('r2');
-    expect(cleanupRef?.parent?.key).toBe('rooms');
+    expect(removeMock).not.toHaveBeenCalled();
     expect(goOfflineMock).toHaveBeenCalledTimes(1);
 
     actor.stop();

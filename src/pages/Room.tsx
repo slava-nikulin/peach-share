@@ -20,9 +20,7 @@ export function Room(): JSX.Element {
     setEndpoint(undefined);
     if (!error()) {
       const message =
-        reason === 'channel_closed'
-          ? 'Соединение закрыто. Попробуйте переподключиться.'
-          : `Соединение прервано (${reason})`;
+        reason === 'channel_closed' ? 'Connection closed.' : `Connection closed (${reason})`;
       setError(message);
     }
   };

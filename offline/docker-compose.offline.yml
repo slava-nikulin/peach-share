@@ -1,68 +1,61 @@
-version: '3.8'
+x-images:
+  rtdb: &img_rtdb ${REGISTRY:-ghcr.io}/${OWNER:-slava-nikulin}/${REPO:-peach-share}/rtdb-emulator-offline:${TAG:-emu}
+  web: &img_web ${REGISTRY:-ghcr.io}/${OWNER:-slava-nikulin}/${REPO:-peach-share}/web-offline:${TAG:-emu}
 
 services:
-  # STUN server for WebRTC; same configuration as docker-compose.base.yml
   stun:
     image: instrumentisto/coturn:latest
+    pull_policy: missing
     command: >
-      turnserver --stun-only \
-        --listening-port=3478 \
-        --listening-ip=0.0.0.0 \
-        --no-tls --no-dtls --fingerprint
+      turnserver --stun-only
+      --listening-port=3478
+      --listening-ip=0.0.0.0
+      --no-tls --no-dtls --fingerprint
     ports:
-      - "3478:3478/udp"
-      - "3478:3478/tcp"
+      - '3478:3478/udp'
+      - '3478:3478/tcp'
 
-  # Firebase RTDB & Auth emulators bundled into one image.  This image is built
-  # from docker/Dockerfile.firebase.offline by the offline‑push script and
-  # published to ghcr.io.  It runs the emulators automatically.
   rtdb-emulator:
-    image: ghcr.io/slava-nikulin/peach-share/rtdb-emulator-offline:emu
+    image: *img_rtdb
+    pull_policy: missing
     environment:
-      # Override project ID if desired (default is set in the image).
       PROJECT_ID: demo-peach-share
-      # Location of Firebase emulator files (these are built into the image, but
-      # volumes can be mounted for persistence if you wish).
-      FIREBASE_EMULATOR_DOWNLOAD_PATH: /opt/firebase
-      XDG_CACHE_HOME: /opt/firebase/.cache
+      FIREBASE_EMULATORS_PATH: /opt/firebase
     ports:
-      - "4000:4000"   # Emulator UI
-      - "9000:9000"   # RTDB emulator
-      - "9099:9099"   # Auth emulator
-    # Uncomment and customise if you want to persist emulator state between runs.
-    # volumes:
-    #   - firebase-emulator-cache:/opt/firebase
-    #   - firebase-emulator-cache-ui:/opt/firebase/.cache
+      - '4000:4000'
+      - '9000:9000'
+      - '9099:9099'
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'curl -fsS http://localhost:9000/health || curl -fsS http://localhost:9000/.json || nc -z 127.0.0.1 9000',
+        ]
+      interval: 5s
+      timeout: 2s
+      retries: 20
+      start_period: 10s
 
-  # Web application built for offline use.  This image is built from
-  # docker/Dockerfile.web.offline by the offline‑push script and published to
-  # ghcr.io.  It runs `vite preview --mode emu` to serve the static build.
   web:
-    image: ghcr.io/slava-nikulin/peach-share/web-offline:emu
+    image: *img_web
+    pull_policy: missing
     environment:
-      # Ensure the application runs in emulator/offline mode.
-      VITE_USE_EMULATORS: "true"
-      VITE_OFFLINE_MODE: "true"
+      HOST_LAN_IP: '${HOST_LAN_IP}'
+      VITE_USE_EMULATORS: 'true'
+      VITE_OFFLINE_MODE: 'true'
       VITE_FIREBASE_PROJECT_ID: demo-peach-share
       VITE_FIREBASE_API_KEY: dev-key
       VITE_FIREBASE_APP_ID: demo-app
-      # Configure emulator hosts and ports to point at the rtdb-emulator service
       VITE_EMULATOR_RTD_HOST: rtdb-emulator
-      VITE_EMULATOR_RTD_PORT: "9000"
+      VITE_EMULATOR_RTD_PORT: '9000'
       VITE_EMULATOR_RTD_NS: demo-peach-share-default-rtdb
       VITE_EMULATOR_AUTH_HOST: rtdb-emulator
-      VITE_EMULATOR_AUTH_PORT: "9099"
-      # Configure STUN server used by WebRTC
+      VITE_EMULATOR_AUTH_PORT: '9099'
       VITE_STUN_URLS: stun:stun:3478
     depends_on:
       rtdb-emulator:
-        condition: service_started
+        condition: service_healthy
       stun:
         condition: service_started
     ports:
-      - "5173:5173"
-
-# Uncomment volumes if you wish to persist emulator data
-# volumes:
-#   firebase-emulator-cache:
-#   firebase-emulator-cache-ui:
+      - '5173:5173'

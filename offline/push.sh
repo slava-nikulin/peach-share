@@ -6,7 +6,7 @@ REPO="${REPO:-peach-share}"
 TAG="${1:-emu}"
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-REPO_ROOT="$(realpath "$SCRIPT_DIR/../..")"
+REPO_ROOT="$(realpath "$SCRIPT_DIR/..")"
 WEB_DF="$REPO_ROOT/docker/Dockerfile.web.offline"
 RTDB_DF="$REPO_ROOT/docker/Dockerfile.firebase.offline"
 
@@ -15,8 +15,12 @@ RTDB_DF="$REPO_ROOT/docker/Dockerfile.firebase.offline"
 
 # echo "$GH_PAT" | docker login ghcr.io -u slava-nikulin --password-stdin
 
-docker build -f "$WEB_DF" -t "ghcr.io/$OWNER/$REPO/web-offline:$TAG" "$REPO_ROOT"
-# docker build -f "$RTDB_DF" -t "ghcr.io/$OWNER/$REPO/rtdb-emulator-offline:$TAG" "$REPO_ROOT"
+docker buildx build -f "$WEB_DF" -t "ghcr.io/$OWNER/$REPO/web-offline:$TAG" "$REPO_ROOT"
+docker buildx build -f "$RTDB_DF" -t "ghcr.io/$OWNER/$REPO/rtdb-emulator-offline:$TAG" "$REPO_ROOT"
+
+echo "Built images:"
+echo "  ghcr.io/$OWNER/$REPO/web-offline:$TAG"
+echo "  ghcr.io/$OWNER/$REPO/rtdb-emulator-offline:$TAG"
 
 # docker push "ghcr.io/$OWNER/$REPO/web-offline:$TAG"
 # docker push "ghcr.io/$OWNER/$REPO/rtdb-emulator-offline:$TAG"

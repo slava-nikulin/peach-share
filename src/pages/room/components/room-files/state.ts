@@ -30,6 +30,7 @@ export class RemoteFilesState {
 
   private readonly setFiles: Setter<RemoteMeta[]>;
   private readonly urlRegistry = new Map<string, string>();
+  private readonly pendingAutoDownloads = new Set<string>();
   private readonly removeTransferListener: () => void;
   private readonly bus: FileBus;
   private readonly transfer: FileTransfer;
@@ -46,6 +47,11 @@ export class RemoteFilesState {
   public handleSync(list: FileMeta[]): void {
     const keepIds = new Set(list.map((file) => file.id));
     this.revokeMissingUrls(keepIds);
+    for (const id of Array.from(this.pendingAutoDownloads)) {
+      if (!keepIds.has(id)) {
+        this.pendingAutoDownloads.delete(id);
+      }
+    }
     this.setFiles(list.map((file) => ({ ...file, downloading: false })));
   }
 
@@ -62,6 +68,7 @@ export class RemoteFilesState {
   }
 
   public requestFile(id: string): void {
+    this.pendingAutoDownloads.add(id);
     this.setFiles((prev) =>
       prev.map((file) => (file.id === id ? { ...file, downloading: true, url: file.url } : file)),
     );
@@ -71,6 +78,7 @@ export class RemoteFilesState {
   public cleanup(): void {
     this.removeTransferListener();
     this.cleanupUrls();
+    this.pendingAutoDownloads.clear();
     this.setFiles([]);
   }
 
@@ -85,10 +93,14 @@ export class RemoteFilesState {
           file.id === event.meta.id ? { ...file, url, downloading: false } : file,
         ),
       );
+      if (this.pendingAutoDownloads.delete(event.meta.id)) {
+        this.triggerAutoDownload(event.meta, url);
+      }
       return;
     }
 
     if (event.status === 'cancelled' || event.status === 'error') {
+      this.pendingAutoDownloads.delete(event.meta.id);
       this.setFiles((prev) =>
         prev.map((file) => (file.id === event.meta.id ? { ...file, downloading: false } : file)),
       );
@@ -129,6 +141,18 @@ export class RemoteFilesState {
     this.files().forEach((file) => {
       if (file.url) URL.revokeObjectURL(file.url);
     });
+  }
+
+  private triggerAutoDownload(meta: FileTransferMeta, url: string): void {
+    if (typeof document === 'undefined') return;
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = meta.name ?? 'download';
+    anchor.rel = 'noopener';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
   }
 }
 

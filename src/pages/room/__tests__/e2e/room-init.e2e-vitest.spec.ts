@@ -89,7 +89,8 @@ describe('room init e2e (concurrent)', () => {
     vi.resetModules();
 
     goOfflineMock.mockClear();
-    ({ db } = await import('../../config/firebase'));
+    const { firebaseEnv } = await import('../../config/firebase');
+    db = firebaseEnv.db;
     ({ startRoomFlow } = await import('../../room-init'));
   }, 240_000);
 
@@ -170,7 +171,7 @@ describe('room init e2e (concurrent)', () => {
     const joinerCleanupLabel = `Cleanup: ${jVM.isCleanupDone() ? 'done' : 'pending'}`;
     expect(creatorCleanupLabel).toBe('Cleanup: done');
     expect(joinerCleanupLabel).toBe('Cleanup: done');
-    expect(goOfflineMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(goOfflineMock.mock.calls.length).toBeGreaterThanOrEqual(1);
 
     expect(cVM.isRtcReady()).toBe(true);
     expect(jVM.isRtcReady()).toBe(true);
