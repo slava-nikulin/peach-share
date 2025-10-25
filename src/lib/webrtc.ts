@@ -33,6 +33,9 @@ interface WebRTCConnectionOptions {
 type SignalingPaths = ReturnType<typeof sigPaths>;
 
 const DEFAULT_CHANNEL_LABEL = 'meta';
+const MAX_PENDING_MESSAGES = 128;
+
+type PendingMessage = { kind: 'json'; data: string } | { kind: 'binary'; data: ArrayBuffer };
 
 export class WebRTCConnection implements RtcEndpoint {
   private readonly dbRoomRef: DatabaseReference;
@@ -51,6 +54,9 @@ export class WebRTCConnection implements RtcEndpoint {
   private paths?: SignalingPaths;
   private initialized = false;
   private isClosed = false;
+  private pendingMessages: PendingMessage[] = [];
+  private channelOpenHandler?: () => void;
+  private channelCloseHandler?: () => void;
 
   public ready!: Promise<void>;
 
@@ -89,15 +95,24 @@ export class WebRTCConnection implements RtcEndpoint {
   }
 
   public readonly sendJSON = (payload: unknown): void => {
-    const channel = this.ensureChannel();
-    channel.send(JSON.stringify(payload));
+    const data = JSON.stringify(payload);
+    this.sendOrQueue({ kind: 'json', data });
   };
 
   public readonly sendBinary = (buf: ArrayBuffer | ArrayBufferView): void => {
-    const channel = this.ensureChannel();
+    // ensure channel initialized even if we end up queuing
+    this.ensureChannel();
     const payload = normalizeBinaryData(buf);
+    if (payload instanceof Promise) {
+      payload
+        .then((resolved) => {
+          if (resolved) this.sendOrQueue({ kind: 'binary', data: resolved });
+        })
+        .catch(() => {});
+      return;
+    }
     if (payload) {
-      channel.send(payload);
+      this.sendOrQueue({ kind: 'binary', data: payload });
     }
   };
 
@@ -140,11 +155,13 @@ export class WebRTCConnection implements RtcEndpoint {
       this.stopRemote?.();
     } catch {}
     try {
+      this.teardownChannelHandlers();
       this._channel?.close();
     } catch {}
     try {
       this._pc?.close();
     } catch {}
+    this.pendingMessages = [];
   };
 
   private async initialize(): Promise<void> {
@@ -176,7 +193,7 @@ export class WebRTCConnection implements RtcEndpoint {
         paths: this.paths,
       });
       this._channel = await channelPromise;
-      this._channel.binaryType = 'arraybuffer';
+      this.attachChannel(this._channel);
       this.ready = WebRTCConnection.createReadyPromise({
         pc: this._pc,
         channel: this._channel,
@@ -188,6 +205,75 @@ export class WebRTCConnection implements RtcEndpoint {
     } catch (error) {
       this.cleanupOnFailure();
       throw error;
+    }
+  }
+
+  private attachChannel(channel: RTCDataChannel): void {
+    channel.binaryType = 'arraybuffer';
+
+    this.channelOpenHandler = (): void => this.flushPendingMessages();
+    this.channelCloseHandler = (): void => {
+      this.pendingMessages = [];
+      if (this.channelOpenHandler) channel.removeEventListener('open', this.channelOpenHandler);
+      if (this.channelCloseHandler) channel.removeEventListener('close', this.channelCloseHandler);
+    };
+
+    if (this.channelOpenHandler) channel.addEventListener('open', this.channelOpenHandler);
+    if (this.channelCloseHandler) channel.addEventListener('close', this.channelCloseHandler);
+    this.flushPendingMessages();
+  }
+
+  private teardownChannelHandlers(): void {
+    if (!this._channel) return;
+    if (this.channelOpenHandler) {
+      try {
+        this._channel.removeEventListener('open', this.channelOpenHandler);
+      } catch {}
+    }
+    if (this.channelCloseHandler) {
+      try {
+        this._channel.removeEventListener('close', this.channelCloseHandler);
+      } catch {}
+    }
+    this.channelOpenHandler = undefined;
+    this.channelCloseHandler = undefined;
+  }
+
+  private sendOrQueue(message: PendingMessage): void {
+    const channel = this.ensureChannel();
+
+    if (channel.readyState === 'open') {
+      this.dispatchMessage(channel, message);
+      return;
+    }
+
+    if (channel.readyState === 'closing' || channel.readyState === 'closed') {
+      throw new Error('data_channel_unavailable');
+    }
+
+    if (this.pendingMessages.length >= MAX_PENDING_MESSAGES) {
+      console.warn('rtc: dropping message, data channel not open yet');
+      return;
+    }
+    this.pendingMessages.push(message);
+  }
+
+  private dispatchMessage(channel: RTCDataChannel, message: PendingMessage): void {
+    if (message.kind === 'json') {
+      channel.send(message.data);
+      return;
+    }
+    channel.send(message.data);
+  }
+
+  private flushPendingMessages(): void {
+    if (this.pendingMessages.length === 0) return;
+    const channel = this._channel;
+    if (!channel || channel.readyState !== 'open') return;
+    while (this.pendingMessages.length) {
+      const next = this.pendingMessages.shift();
+      if (!next) break;
+      this.dispatchMessage(channel, next);
     }
   }
 
@@ -255,7 +341,15 @@ export class WebRTCConnection implements RtcEndpoint {
   ): () => void {
     const handleIceCandidate = (event: RTCPeerConnectionIceEvent): void => {
       if (event.candidate) {
-        void pushEncrypted(targetRef, aesKey, event.candidate.toJSON());
+        void pushEncrypted(targetRef, aesKey, event.candidate.toJSON()).catch((error) => {
+          const code =
+            (error as { code?: string })?.code ?? (error as { message?: string })?.message;
+          if (typeof code === 'string' && code.includes('PERMISSION_DENIED')) {
+            console.debug('Skipping ICE candidate push due to permissions', error);
+          } else {
+            console.warn('Failed to push ICE candidate', error);
+          }
+        });
       }
     };
 
@@ -273,43 +367,58 @@ export class WebRTCConnection implements RtcEndpoint {
   ): () => void {
     const MAX_Q = 500;
     const q: RTCIceCandidateInit[] = [];
-    let rdSet = false;
+    const hasRemoteDescription = (): boolean => !!pc.remoteDescription;
+
+    const safeAdd = (cand: RTCIceCandidateInit): void => {
+      pc.addIceCandidate(new RTCIceCandidate(cand)).catch((err) =>
+        console.warn('addIceCandidate failed', err),
+      );
+    };
 
     const flushQueue = (): void => {
-      if (!rdSet) return;
+      if (!hasRemoteDescription()) return;
       while (q.length) {
         const cand = q.shift();
         if (!cand) continue;
-        pc.addIceCandidate(new RTCIceCandidate(cand)).catch((err) =>
-          console.warn('addIceCandidate failed', err),
-        );
+        safeAdd(cand);
       }
     };
 
     const handleSignalingStateChange = (): void => {
-      if (pc.signalingState === 'stable' || pc.remoteDescription) {
-        rdSet = true;
-        flushQueue();
-      }
+      flushQueue();
     };
 
+    const nativeSetRemoteDescription =
+      typeof pc.setRemoteDescription === 'function' ? pc.setRemoteDescription : undefined;
+
+    if (nativeSetRemoteDescription) {
+      pc.setRemoteDescription = (async (
+        ...args: Parameters<RTCPeerConnection['setRemoteDescription']>
+      ) => {
+        const result = await nativeSetRemoteDescription.apply(pc, args);
+        flushQueue();
+        return result;
+      }) as RTCPeerConnection['setRemoteDescription'];
+    }
+
     pc.addEventListener('signalingstatechange', handleSignalingStateChange);
-    handleSignalingStateChange();
+    flushQueue();
 
     const stopOnEachEncrypted = onEachEncrypted<RTCIceCandidateInit>(src, key, (cand) => {
-      if (!rdSet) {
+      if (!hasRemoteDescription()) {
         if (q.length < MAX_Q) {
           q.push(cand);
         }
         return;
       }
-      pc.addIceCandidate(new RTCIceCandidate(cand)).catch((err) =>
-        console.warn('addIceCandidate failed', err),
-      );
+      safeAdd(cand);
     });
 
     return (): void => {
       pc.removeEventListener('signalingstatechange', handleSignalingStateChange);
+      if (nativeSetRemoteDescription) {
+        pc.setRemoteDescription = nativeSetRemoteDescription;
+      }
       stopOnEachEncrypted();
     };
   }

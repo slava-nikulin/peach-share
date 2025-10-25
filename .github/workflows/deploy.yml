@@ -1,0 +1,56 @@
+name: Deploy and Offline Push
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+  pages: write
+  id-token: write
+
+jobs:
+  offline-images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.2
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Build and push offline images
+        env:
+          OWNER: slava-nikulin
+          REPO: peach-share
+        run: |
+          chmod +x docker/scripts/offline-push.sh
+          ./docker/scripts/offline-push.sh emu
+
+      # Подготовка артефакта Pages
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  # Деплой на GitHub Pages
+  deploy:
+    needs: offline-images
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages

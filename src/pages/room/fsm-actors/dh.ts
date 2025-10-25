@@ -11,7 +11,7 @@ import {
   toBase64Url,
   utf8,
 } from '../../../lib/crypto';
-import { db } from '../config/firebase';
+import { firebaseEnv } from '../config/firebase';
 import type { Role } from '../types';
 
 interface SessionContext {
@@ -75,7 +75,8 @@ class DiffieHellmanHandshake {
 
   constructor(input: StartDhInput, deps: StartDhDeps) {
     this.input = input;
-    this.database = deps.db ?? db;
+    if (!deps.db) firebaseEnv.reconnect();
+    this.database = deps.db ?? firebaseEnv.db;
   }
 
   public async execute(): Promise<StartDhResult> {

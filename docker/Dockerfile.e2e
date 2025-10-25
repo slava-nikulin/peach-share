@@ -1,4 +1,4 @@
-FROM selenium/standalone-chrome:140.0-20251020
+FROM selenium/standalone-chrome:latest
 
 USER root
 

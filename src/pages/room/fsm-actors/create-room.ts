@@ -1,5 +1,5 @@
 import { type Database, ref, runTransaction, serverTimestamp } from 'firebase/database';
-import { db } from '../config/firebase';
+import { firebaseEnv } from '../config/firebase';
 import type { RoomRecord } from '../types';
 
 interface CreateRoomDeps {
@@ -10,7 +10,8 @@ export async function createRoom(
   input: { roomId: string; authId: string },
   deps: CreateRoomDeps = {},
 ): Promise<RoomRecord> {
-  const database = deps.db ?? db;
+  if (!deps.db) firebaseEnv.reconnect();
+  const database = deps.db ?? firebaseEnv.db;
   const roomRef = ref(database, `rooms/${input.roomId}`);
   const now = serverTimestamp();
   const payload: RoomRecord = {

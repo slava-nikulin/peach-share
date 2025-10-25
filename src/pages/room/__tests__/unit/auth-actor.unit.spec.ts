@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
-vi.mock('../config/firebase', () => ({ auth: { currentUser: null } }));
+vi.mock('../config/firebase', () => ({
+  firebaseEnv: {
+    auth: { currentUser: null },
+  },
+}));
 vi.mock('firebase/auth', async (importOriginal: () => Promise<typeof import('firebase/auth')>) => {
   const actual = await importOriginal();
   return {

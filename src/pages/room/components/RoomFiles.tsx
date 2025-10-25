@@ -13,6 +13,45 @@ import {
   setupConnectionGuards,
 } from './room-files/state';
 
+function useRoomFilesLifecycle(args: {
+  endpoint: RtcEndpoint;
+  onDisconnect?: (reason: string) => void;
+  onSync: () => void;
+  attachGuards: () => (() => void) | undefined;
+  teardown: () => void;
+}): void {
+  let unloadHandler: (() => void) | undefined;
+  let guards: (() => void) | undefined;
+
+  onMount(() => {
+    unloadHandler = (): void => {
+      try {
+        args.endpoint.close();
+      } catch {}
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', unloadHandler);
+      window.addEventListener('pagehide', unloadHandler);
+    }
+
+    guards = args.attachGuards();
+    args.onSync();
+  });
+
+  onCleanup(() => {
+    if (typeof window !== 'undefined' && unloadHandler) {
+      window.removeEventListener('beforeunload', unloadHandler);
+      window.removeEventListener('pagehide', unloadHandler);
+    }
+    guards?.();
+    args.teardown();
+    try {
+      args.endpoint.close();
+    } catch {}
+  });
+}
+
 export function RoomFiles(props: {
   ep: RtcEndpoint;
   onDisconnect?: (reason: string) => void;
@@ -37,20 +76,20 @@ export function RoomFiles(props: {
     /* reserved for future binary control */
   });
 
-  let teardownGuards: (() => void) | undefined;
-
-  onMount(() => {
-    teardownGuards = setupConnectionGuards(props.ep, props.onDisconnect);
-    local.syncWithPeer();
-  });
-
-  onCleanup(() => {
+  const teardown = (): void => {
     offJSON();
     offBin();
-    teardownGuards?.();
     remote.cleanup();
     cleanupDragState();
     transfer.dispose();
+  };
+
+  useRoomFilesLifecycle({
+    endpoint: props.ep,
+    onDisconnect: props.onDisconnect,
+    onSync: () => local.syncWithPeer(),
+    attachGuards: () => setupConnectionGuards(props.ep, props.onDisconnect),
+    teardown,
   });
 
   return (

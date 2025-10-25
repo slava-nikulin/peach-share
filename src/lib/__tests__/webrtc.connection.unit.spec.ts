@@ -156,6 +156,11 @@ class MockRTCPeerConnection extends MockEventTarget {
   public remoteDescription: RTCSessionDescription | null = null;
   public addIceCandidate = vi.fn(() => Promise.resolve());
   public createDataChannel = vi.fn((label: string) => new MockDataChannel(label));
+  public setRemoteDescription = vi.fn(
+    async (desc?: RTCSessionDescriptionInit | RTCSessionDescription) => {
+      this.remoteDescription = (desc ?? {}) as RTCSessionDescription;
+    },
+  );
 
   public triggerConnectionState(state: RTCPeerConnectionState): void {
     this.connectionState = state;
@@ -186,17 +191,20 @@ describe('subscribeRemoteCandidates', () => {
 
   it('removes listeners and stops subscription on cleanup', () => {
     const pc = new MockRTCPeerConnection();
+    const originalSetRemoteDescription = pc.setRemoteDescription;
     const stop = getSubscribeRemoteCandidates()(
       pc as unknown as RTCPeerConnection,
       {} as CryptoKey,
       {},
     );
     expect(pc.listenerCount('signalingstatechange')).toBe(1);
+    expect(pc.setRemoteDescription).not.toBe(originalSetRemoteDescription);
 
     stop();
 
     expect(pc.listenerCount('signalingstatechange')).toBe(0);
     expect(stopOnEachEncryptedSpy).toHaveBeenCalledTimes(1);
+    expect(pc.setRemoteDescription).toBe(originalSetRemoteDescription);
   });
 
   it('flushes queued candidates immediately when remote description already set', async () => {
@@ -215,6 +223,50 @@ describe('subscribeRemoteCandidates', () => {
     if (!callback) throw new Error('candidate callback missing');
     callback(candidate);
 
+    await Promise.resolve();
+    expect(addSpy).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it('does not flush queued candidates until remote description becomes available', async () => {
+    const pc = new MockRTCPeerConnection();
+    const addSpy = vi.spyOn(pc, 'addIceCandidate');
+    const stop = getSubscribeRemoteCandidates()(
+      pc as unknown as RTCPeerConnection,
+      {} as CryptoKey,
+      {},
+    );
+
+    const callback = candidateCallbacks[0];
+    expect(callback).toBeDefined();
+    if (!callback) throw new Error('candidate callback missing');
+    callback({ candidate: 'queued' } as RTCIceCandidateInit);
+
+    pc.triggerSignalingState('stable');
+    await Promise.resolve();
+    expect(addSpy).not.toHaveBeenCalled();
+
+    pc.remoteDescription = {} as RTCSessionDescription;
+    pc.triggerSignalingState('stable');
+    await Promise.resolve();
+    expect(addSpy).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it('flushes queued candidates once setRemoteDescription resolves', async () => {
+    const pc = new MockRTCPeerConnection();
+    const addSpy = vi.spyOn(pc, 'addIceCandidate');
+    const stop = getSubscribeRemoteCandidates()(
+      pc as unknown as RTCPeerConnection,
+      {} as CryptoKey,
+      {},
+    );
+    const callback = candidateCallbacks[0];
+    expect(callback).toBeDefined();
+    if (!callback) throw new Error('candidate callback missing');
+    callback({ candidate: 'queued' } as RTCIceCandidateInit);
+
+    await pc.setRemoteDescription({ type: 'answer', sdp: 'test' } as RTCSessionDescriptionInit);
     await Promise.resolve();
     expect(addSpy).toHaveBeenCalledTimes(1);
     stop();
@@ -437,5 +489,68 @@ describe('datachannel binary handling', () => {
     const buffer = handler.mock.calls[0][0] as ArrayBuffer;
     expect(new Uint8Array(buffer)).toEqual(new Uint8Array([1, 2, 3]));
     dispose();
+  });
+});
+
+describe('send queueing', () => {
+  const createConnection = (): {
+    connection: WebRTCConnection;
+    channel: MockDataChannel;
+    pc: MockRTCPeerConnection;
+  } => {
+    const options = {
+      dbRoomRef: {} as DatabaseReference,
+      role: 'owner' as Role,
+      encKey: new Uint8Array(0),
+      timeoutMs: 1000,
+    };
+    const connection = new (
+      WebRTCConnection as unknown as new (
+        opts: typeof options,
+      ) => WebRTCConnection
+    )(options);
+    const channel = new MockDataChannel();
+    const pc = new MockRTCPeerConnection();
+    (connection as unknown as { _channel: RTCDataChannel })._channel =
+      channel as unknown as RTCDataChannel;
+    (connection as unknown as { _pc: RTCPeerConnection })._pc = pc as unknown as RTCPeerConnection;
+    (connection as unknown as { attachChannel: (ch: RTCDataChannel) => void }).attachChannel(
+      channel as unknown as RTCDataChannel,
+    );
+    (connection as unknown as { initialized: boolean }).initialized = true;
+    return { connection, channel, pc };
+  };
+
+  it('queues JSON messages until the channel opens', () => {
+    const { connection, channel } = createConnection();
+    const sendSpy = vi.spyOn(channel, 'send');
+    connection.sendJSON({ hello: 'world' });
+    expect(sendSpy).not.toHaveBeenCalled();
+    channel.triggerOpen();
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(sendSpy).toHaveBeenCalledWith(JSON.stringify({ hello: 'world' }));
+  });
+
+  it('queues binary messages until the channel opens', () => {
+    const { connection, channel } = createConnection();
+    const sendSpy = vi.spyOn(channel, 'send');
+    const payload = new Uint8Array([1, 2, 3]);
+    connection.sendBinary(payload);
+    expect(sendSpy).not.toHaveBeenCalled();
+    channel.triggerOpen();
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    const [firstCall] = sendSpy.mock.calls as unknown[][];
+    const sentUnknown = firstCall?.[0];
+    expect(sentUnknown).toBeInstanceOf(ArrayBuffer);
+    if (!(sentUnknown instanceof ArrayBuffer)) {
+      throw new Error('Expected ArrayBuffer payload to be sent');
+    }
+    expect(new Uint8Array(sentUnknown)).toEqual(payload);
+  });
+
+  it('throws when trying to send while channel is closed', () => {
+    const { connection, channel } = createConnection();
+    channel.setReadyState('closed');
+    expect(() => connection.sendJSON({ fail: true })).toThrow('data_channel_unavailable');
   });
 });

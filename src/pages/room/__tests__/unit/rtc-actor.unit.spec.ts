@@ -16,7 +16,10 @@ vi.mock('firebase/database', () => ({
 }));
 
 vi.mock('../../config/firebase', () => ({
-  db: Symbol('db'),
+  firebaseEnv: {
+    db: Symbol('db'),
+    reconnect: vi.fn(),
+  },
 }));
 
 const noop = (): void => undefined;

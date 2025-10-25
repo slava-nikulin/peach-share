@@ -1,7 +1,8 @@
-import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { auth } from '../config/firebase';
+import { type Auth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import { firebaseEnv } from '../config/firebase';
 
 let authReadyP: Promise<string> | null = null;
+const auth: Auth = firebaseEnv.auth;
 let cachedUid: string | null = auth.currentUser?.uid ?? null;
 let startedAnonSignIn = false;
 
