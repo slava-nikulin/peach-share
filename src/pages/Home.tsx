@@ -1,44 +1,78 @@
 import { useNavigate } from '@solidjs/router';
-import { type Component, onCleanup, onMount } from 'solid-js';
+import { type Component, type JSX, onCleanup, onMount, type Setter } from 'solid-js';
 import { useNavActions } from '../components/nav-actions';
 import { RoomModal, type RoomModalHandle } from '../components/RoomModal';
 import { fromBase64Url, genSecret32, hkdfPathId, toBase64Url } from '../lib/crypto';
 
-export const Home: Component = () => {
-  const { setNavActions: setActions } = useNavActions();
-  const navigate = useNavigate();
+interface NavActionOptions {
+  onJoinClick: () => void;
+  onCreateClick: () => Promise<void> | void;
+  showOfflineDownload: boolean;
+}
 
-  const createRoom = async (): Promise<void> => {
-    const secret = genSecret32();
-    const pathId = await hkdfPathId(secret, 'path', 128);
-    const secretB64 = toBase64Url(secret);
-    navigate(`/room/${pathId}`, {
-      state: { secret: secretB64, intent: 'create' },
-    });
-  };
+export const createHomeNavActions = ({
+  onJoinClick,
+  onCreateClick,
+  showOfflineDownload,
+}: NavActionOptions): JSX.Element => (
+  <>
+    <button
+      type="button"
+      onClick={onJoinClick}
+      class="rounded-lg border border-slate-900/50 bg-white px-2 py-1.5 text-lg hover:cursor-pointer hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-900/10"
+    >
+      Join room
+    </button>
+
+    <button
+      type="button"
+      onClick={onCreateClick}
+      class="rounded-lg bg-gradient-to-r from-pink-400 via-pink-500 to-pink-600 px-2 py-1.5 text-lg text-white shadow-sm hover:cursor-pointer hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-slate-900/20"
+    >
+      Start sharing
+    </button>
+
+    {showOfflineDownload && (
+      <a
+        href="/ca/peachshare-rootCA.crt"
+        download=""
+        class="me-2 inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-teal-400 via-teal-500 to-lime-400 px-2 py-1.5 text-lg text-white shadow-sm hover:cursor-pointer hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-slate-900/20"
+      >
+        Download Root CA
+      </a>
+    )}
+  </>
+);
+
+type NavActionsDeps = NavActionOptions & {
+  setActions: Setter<JSX.Element | null>;
+};
+
+export const useHomeNavActions = ({
+  setActions,
+  onJoinClick,
+  onCreateClick,
+  showOfflineDownload,
+}: NavActionsDeps): void => {
   onMount(() => {
     setActions(
-      <>
-        <button
-          type="button"
-          onClick={handleJoinButtonClick}
-          class="rounded-lg border border-slate-900/50 bg-white px-2 py-1.5 text-lg hover:cursor-pointer hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-900/10"
-        >
-          Join room
-        </button>
-
-        <button
-          type="button"
-          onClick={createRoom}
-          class="rounded-lg bg-gradient-to-r from-pink-400 via-pink-500 to-pink-600 px-2 py-1.5 text-lg text-white shadow-sm hover:cursor-pointer hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-slate-900/20"
-        >
-          Start sharing
-        </button>
-      </>,
+      createHomeNavActions({
+        onJoinClick,
+        onCreateClick,
+        showOfflineDownload,
+      }),
     );
   });
   onCleanup(() => setActions(null));
+};
 
+interface JoinHandlers {
+  handleJoinRoomForm: (secretB64: string) => Promise<void>;
+  handleJoinButtonClick: () => void;
+  handleModalReady: (api: RoomModalHandle) => void;
+}
+
+const createJoinHandlers = (navigate: ReturnType<typeof useNavigate>): JoinHandlers => {
   let joinRoomModal: RoomModalHandle | undefined;
 
   const handleJoinRoomForm = async (secretB64: string): Promise<void> => {
@@ -57,6 +91,32 @@ export const Home: Component = () => {
   const handleModalReady = (api: RoomModalHandle): void => {
     joinRoomModal = api;
   };
+
+  return { handleJoinRoomForm, handleJoinButtonClick, handleModalReady };
+};
+
+export const Home: Component = () => {
+  const { setNavActions: setActions } = useNavActions();
+  const navigate = useNavigate();
+  const isOfflineAndEmu =
+    import.meta.env.VITE_USE_EMULATORS === 'true' && import.meta.env.VITE_OFFLINE_MODE === 'true';
+
+  const createRoom = async (): Promise<void> => {
+    const secret = genSecret32();
+    const pathId = await hkdfPathId(secret, 'path', 128);
+    const secretB64 = toBase64Url(secret);
+    navigate(`/room/${pathId}`, {
+      state: { secret: secretB64, intent: 'create' },
+    });
+  };
+  const { handleJoinRoomForm, handleJoinButtonClick, handleModalReady } =
+    createJoinHandlers(navigate);
+  useHomeNavActions({
+    setActions,
+    onJoinClick: handleJoinButtonClick,
+    onCreateClick: createRoom,
+    showOfflineDownload: isOfflineAndEmu,
+  });
 
   return (
     <div class="grid grid-cols-1">

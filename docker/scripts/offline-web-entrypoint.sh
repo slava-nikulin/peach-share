@@ -6,14 +6,31 @@ HOST_LAN_IP="${HOST_LAN_IP:-0.0.0.0}"
 MODE="${MODE:-emu}"
 ROOT_DIR="${ROOT_DIR:-/usr/share/nginx/html}"
 
+HTTP_HOST_PORT="${HTTP_HOST_PORT:-8080}"
+HTTPS_HOST_PORT="${HTTPS_HOST_PORT:-8443}"
+
 if [ -z "${PORT}" ] || ! printf '%s' "${PORT}" | grep -Eq '^[0-9]+$'; then
   echo "Invalid PORT value: ${PORT}" >&2
   exit 1
 fi
 
-echo "HTTP server will listen on 0.0.0.0:${PORT}"
-echo "LAN URL:  http://${HOST_LAN_IP}:${PORT}"
-echo "Local URL: http://localhost:${PORT}"
+echo "Static bundle mode: ${MODE}"
+echo "Static server root: ${ROOT_DIR}"
+
+echo
+echo "Container listen: 0.0.0.0:${PORT}"
+echo "Host HTTP port:  ${HTTP_HOST_PORT}"
+echo "Host HTTPS port: ${HTTPS_HOST_PORT}"
+
+echo
+echo "HTTP (no TLS, direct from web container):"
+echo "  LAN   http://${HOST_LAN_IP}:${HTTP_HOST_PORT}"
+echo "  Local http://localhost:${HTTP_HOST_PORT}"
+
+echo
+echo "HTTPS (TLS via Traefik reverse proxy):"
+echo "  LAN   https://${HOST_LAN_IP}:${HTTPS_HOST_PORT}"
+echo "  Local https://localhost:${HTTPS_HOST_PORT}"
 
 if [ ! -d "${ROOT_DIR}" ]; then
   echo "Warning: ROOT_DIR ${ROOT_DIR} does not exist" >&2

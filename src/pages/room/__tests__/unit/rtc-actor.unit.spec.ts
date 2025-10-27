@@ -15,11 +15,18 @@ vi.mock('firebase/database', () => ({
   ref: refMock,
 }));
 
+interface FirebaseEnvMock {
+  db: symbol;
+  reconnect: ReturnType<typeof vi.fn>;
+}
+
+const envMock: FirebaseEnvMock = {
+  db: Symbol('db'),
+  reconnect: vi.fn(),
+};
+
 vi.mock('../../config/firebase', () => ({
-  firebaseEnv: {
-    db: Symbol('db'),
-    reconnect: vi.fn(),
-  },
+  getRoomFirebaseEnv: () => envMock,
 }));
 
 const noop = (): void => undefined;

@@ -1,6 +1,7 @@
 x-images:
   rtdb: &img_rtdb ${REGISTRY:-ghcr.io}/${OWNER:-slava-nikulin}/${REPO:-peach-share}/rtdb-emulator-offline:${TAG:-emu}
   web: &img_web ${REGISTRY:-ghcr.io}/${OWNER:-slava-nikulin}/${REPO:-peach-share}/web-offline:${TAG:-emu}
+  proxy: &img_proxy ${REGISTRY:-ghcr.io}/${OWNER:-slava-nikulin}/${REPO:-peach-share}/proxy:${TAG:-emu}
 
 services:
   stun:
@@ -46,16 +47,53 @@ services:
       VITE_FIREBASE_PROJECT_ID: demo-peach-share
       VITE_FIREBASE_API_KEY: dev-key
       VITE_FIREBASE_APP_ID: demo-app
-      VITE_EMULATOR_RTD_HOST: rtdb-emulator
+      VITE_EMULATOR_RTD_HOST: '${HOST_LAN_IP:-rtdb-emulator}'
       VITE_EMULATOR_RTD_PORT: '9000'
       VITE_EMULATOR_RTD_NS: demo-peach-share-default-rtdb
-      VITE_EMULATOR_AUTH_HOST: rtdb-emulator
+      VITE_EMULATOR_AUTH_HOST: '${HOST_LAN_IP:-rtdb-emulator}'
       VITE_EMULATOR_AUTH_PORT: '9099'
-      VITE_STUN_URLS: stun:stun:3478
+      VITE_STUN_URLS: 'stun:${HOST_LAN_IP:-stun}:3478'
     depends_on:
       rtdb-emulator:
         condition: service_healthy
       stun:
         condition: service_started
     ports:
-      - '5173:5173'
+      - '8080:5173' # прямой HTTP доступ в обход traefik
+    volumes:
+      - certs-public:/usr/share/nginx/html/ca:ro
+    labels:
+      - 'traefik.enable=true'
+
+      # HTTPS :443
+      - 'traefik.http.routers.web-https.rule=PathPrefix(`/`)'
+      - 'traefik.http.routers.web-https.entrypoints=websecure'
+      - 'traefik.http.routers.web-https.tls=true'
+      - 'traefik.http.services.web.loadbalancer.server.port=5173'
+
+      # HTTPS :8443
+      - 'traefik.http.routers.web-https-alt.rule=PathPrefix(`/`)'
+      - 'traefik.http.routers.web-https-alt.entrypoints=websecure_alt'
+      - 'traefik.http.routers.web-https-alt.tls=true'
+      - 'traefik.http.services.web.loadbalancer.server.port=5173'
+
+  proxy:
+    image: *img_proxy
+    pull_policy: missing
+    depends_on:
+      - web
+    environment:
+      HOST_LAN_IP: '${HOST_LAN_IP}'
+      CA_VALID_DAYS: '3650' # 10 лет
+      LEAF_VALID_DAYS: '7' # 7 дней
+    ports:
+      - '443:443'
+      - '8443:8443'
+    volumes:
+      - certs-full:/certs
+      - certs-public:/certs-public
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+volumes:
+  certs-full:
+  certs-public:

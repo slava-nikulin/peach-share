@@ -8,7 +8,7 @@ import {
   runTransaction,
   serverTimestamp,
 } from 'firebase/database';
-import { firebaseEnv } from '../config/firebase';
+import { getRoomFirebaseEnv, type RoomFirebaseEnvironment } from '../config/firebase';
 import type { RoomRecord } from '../types';
 
 async function waitForRoomExists(roomRef: DatabaseReference, timeoutMs: number): Promise<void> {
@@ -39,6 +39,7 @@ async function waitForRoomExists(roomRef: DatabaseReference, timeoutMs: number):
 
 interface JoinRoomDeps {
   db?: Database;
+  env?: RoomFirebaseEnvironment;
 }
 
 export async function joinRoom(
@@ -50,8 +51,9 @@ export async function joinRoom(
   deps: JoinRoomDeps = {},
 ): Promise<RoomRecord> {
   const { roomId, authId, timeoutMs = 15_000 } = input;
-  if (!deps.db) firebaseEnv.reconnect();
-  const database = deps.db ?? firebaseEnv.db;
+  const env = deps.env ?? getRoomFirebaseEnv();
+  if (!deps.db) env.reconnect();
+  const database = deps.db ?? env.db;
   const roomRef = ref(database, `rooms/${roomId}`);
 
   await waitForRoomExists(roomRef, timeoutMs).catch((e) => {

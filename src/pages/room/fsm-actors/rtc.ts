@@ -1,19 +1,29 @@
-import { ref } from 'firebase/database';
+import { type Database, ref } from 'firebase/database';
 import { type RtcEndpoint, WebRTCConnection } from '../../../lib/webrtc';
-import { firebaseEnv } from '../config/firebase';
+import { getRoomFirebaseEnv, type RoomFirebaseEnvironment } from '../config/firebase';
 import type { Intent, RoomRecord } from '../types';
 
-export async function startRTC(input: {
-  room: RoomRecord;
-  intent: Intent;
-  encKey: Uint8Array;
-  timeoutMs: number;
-  stun: RTCIceServer[];
-  abortSignal?: AbortSignal;
-}): Promise<{ rtcReady: true; endpoint: RtcEndpoint }> {
+interface StartRtcDeps {
+  env?: RoomFirebaseEnvironment;
+  database?: Database;
+}
+
+export async function startRTC(
+  input: {
+    room: RoomRecord;
+    intent: Intent;
+    encKey: Uint8Array;
+    timeoutMs: number;
+    stun: RTCIceServer[];
+    abortSignal?: AbortSignal;
+  },
+  deps: StartRtcDeps = {},
+): Promise<{ rtcReady: true; endpoint: RtcEndpoint }> {
   const role = input.intent === 'create' ? 'owner' : 'guest';
-  firebaseEnv.reconnect();
-  const dbRoomRef = ref(firebaseEnv.db, `rooms/${input.room.room_id}`);
+  const env = deps.env ?? getRoomFirebaseEnv();
+  if (!deps.database) env.reconnect();
+  const database = deps.database ?? env.db;
+  const dbRoomRef = ref(database, `rooms/${input.room.room_id}`);
 
   const endpoint = await WebRTCConnection.create({
     dbRoomRef,

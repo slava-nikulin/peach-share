@@ -1,17 +1,19 @@
 import { type Database, ref, runTransaction, serverTimestamp } from 'firebase/database';
-import { firebaseEnv } from '../config/firebase';
+import { getRoomFirebaseEnv, type RoomFirebaseEnvironment } from '../config/firebase';
 import type { RoomRecord } from '../types';
 
 interface CreateRoomDeps {
   db?: Database;
+  env?: RoomFirebaseEnvironment;
 }
 
 export async function createRoom(
   input: { roomId: string; authId: string },
   deps: CreateRoomDeps = {},
 ): Promise<RoomRecord> {
-  if (!deps.db) firebaseEnv.reconnect();
-  const database = deps.db ?? firebaseEnv.db;
+  const env = deps.env ?? getRoomFirebaseEnv();
+  if (!deps.db) env.reconnect();
+  const database = deps.db ?? env.db;
   const roomRef = ref(database, `rooms/${input.roomId}`);
   const now = serverTimestamp();
   const payload: RoomRecord = {

@@ -134,12 +134,17 @@ export class RemoteFilesState {
   }
 
   private cleanupUrls(): void {
+    const revoked = new Set<string>();
     for (const url of this.urlRegistry.values()) {
+      if (revoked.has(url)) continue;
       URL.revokeObjectURL(url);
+      revoked.add(url);
     }
     this.urlRegistry.clear();
     this.files().forEach((file) => {
-      if (file.url) URL.revokeObjectURL(file.url);
+      if (!file.url || revoked.has(file.url)) return;
+      URL.revokeObjectURL(file.url);
+      revoked.add(file.url);
     });
   }
 

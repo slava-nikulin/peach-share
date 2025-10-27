@@ -131,7 +131,7 @@ function RoomModalForm(props: RoomModalFormProps): JSX.Element {
           id={inputId}
           name="room-id"
           type="text"
-          class="w-lg rounded-lg border border-gray-300 user-invalid:border-red-500 bg-gray-50 px-3 text-gray-900 text-lg `focus:ring-4 transition-colors invalid:border-red-500 focus:border-blue-500 focus:outline-none focus:ring-blue-300"
+          class="w-full max-w-lg rounded-lg border border-gray-300 user-invalid:border-red-500 bg-gray-50 px-3 text-gray-900 text-lg transition-colors invalid:border-red-500 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-300"
           required
           autocomplete="off"
         />

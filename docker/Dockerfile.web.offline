@@ -24,10 +24,10 @@ FROM nginx:1.29.2-alpine AS runner
 WORKDIR /usr/share/nginx/html
 
 COPY --from=builder /app/dist ./
-COPY docker/scripts/web-entrypoint-offline.sh /docker/scripts/web-entrypoint-offline.sh
+COPY docker/scripts/offline-web-entrypoint.sh /docker/scripts/offline-web-entrypoint.sh
 
-RUN chmod +x /docker/scripts/web-entrypoint-offline.sh
+RUN chmod +x /docker/scripts/offline-web-entrypoint.sh
 
 EXPOSE 5173
 
-ENTRYPOINT ["/docker/scripts/web-entrypoint-offline.sh"]
+ENTRYPOINT ["/docker/scripts/offline-web-entrypoint.sh"]

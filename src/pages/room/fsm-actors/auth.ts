@@ -1,74 +1,88 @@
 import { type Auth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { firebaseEnv } from '../config/firebase';
+import { getRoomFirebaseEnv, type RoomFirebaseEnvironment } from '../config/firebase';
 
-let authReadyP: Promise<string> | null = null;
-const auth: Auth = firebaseEnv.auth;
-let cachedUid: string | null = auth.currentUser?.uid ?? null;
-let startedAnonSignIn = false;
+export interface AuthenticatorDeps {
+  env?: RoomFirebaseEnvironment;
+}
 
-export function anonAuth(timeoutMs: number = 15000): Promise<string> {
-  if (cachedUid || auth.currentUser?.uid) {
-    const uid = cachedUid ?? auth.currentUser?.uid;
-    if (!uid) {
-      return Promise.reject(new Error('no_auth_uid'));
+export class Authenticator {
+  private readonly env: RoomFirebaseEnvironment;
+  private readonly auth: Auth;
+  private authReadyP: Promise<string> | null = null;
+  private cachedUid: string | null;
+  private startedAnonSignIn = false;
+
+  constructor(deps: AuthenticatorDeps = {}) {
+    this.env = deps.env ?? getRoomFirebaseEnv();
+    this.auth = this.env.auth;
+    this.cachedUid = this.auth.currentUser?.uid ?? null;
+  }
+
+  public reset(): void {
+    this.cachedUid = null;
+    this.authReadyP = null;
+    this.startedAnonSignIn = false;
+  }
+
+  public anonAuth(timeoutMs: number = 15_000): Promise<string> {
+    const existingUid = this.cachedUid ?? this.auth.currentUser?.uid ?? null;
+    if (existingUid) {
+      this.cachedUid = existingUid;
+      return Promise.resolve(existingUid);
     }
-    cachedUid = uid;
-    return Promise.resolve(uid);
-  }
-  if (authReadyP) return authReadyP;
 
-  let resolveWrap!: (uid: string) => void;
-  let rejectWrap!: (e: unknown) => void;
-  authReadyP = new Promise<string>((res, rej) => {
-    resolveWrap = res;
-    rejectWrap = rej;
-  });
+    if (this.authReadyP) return this.authReadyP;
 
-  const timer = setTimeout(() => {
-    const err = new Error('auth_timeout');
-    rejectWrap(err);
-    authReadyP = null;
-    startedAnonSignIn = false;
-  }, timeoutMs);
-
-  const unsub = onAuthStateChanged(
-    auth,
-    (u) => {
-      if (u?.uid) {
-        cachedUid = u.uid;
-        clearTimeout(timer);
-        unsub();
-        // закрепляем «липкий» resolved
-        const uid = u.uid;
-        authReadyP = Promise.resolve(uid);
-        resolveWrap(uid);
-      }
-    },
-    (err) => {
-      clearTimeout(timer);
-      unsub();
-      authReadyP = null;
-      startedAnonSignIn = false;
-      rejectWrap(err);
-    },
-  );
-
-  if (!auth.currentUser && !startedAnonSignIn) {
-    startedAnonSignIn = true;
-    signInAnonymously(auth).catch((e) => {
-      clearTimeout(timer);
-      unsub();
-      authReadyP = null;
-      startedAnonSignIn = false;
-      rejectWrap(e);
+    let resolveWrap!: (uid: string) => void;
+    let rejectWrap!: (error: unknown) => void;
+    const pending = new Promise<string>((resolve, reject) => {
+      resolveWrap = resolve;
+      rejectWrap = reject;
     });
+    this.authReadyP = pending;
+
+    const timer = setTimeout(() => {
+      const error = new Error('auth_timeout');
+      this.authReadyP = null;
+      this.startedAnonSignIn = false;
+      rejectWrap(error);
+    }, timeoutMs);
+
+    const unsubscribe = onAuthStateChanged(
+      this.auth,
+      (user) => {
+        if (user?.uid) {
+          this.cachedUid = user.uid;
+          clearTimeout(timer);
+          unsubscribe();
+          const uid = user.uid;
+          this.authReadyP = Promise.resolve(uid);
+          this.startedAnonSignIn = false;
+          resolveWrap(uid);
+        }
+      },
+      (error) => {
+        clearTimeout(timer);
+        unsubscribe();
+        this.authReadyP = null;
+        this.startedAnonSignIn = false;
+        rejectWrap(error);
+      },
+    );
+
+    if (!this.auth.currentUser && !this.startedAnonSignIn) {
+      this.startedAnonSignIn = true;
+      signInAnonymously(this.auth).catch((error) => {
+        clearTimeout(timer);
+        unsubscribe();
+        this.authReadyP = null;
+        this.startedAnonSignIn = false;
+        rejectWrap(error);
+      });
+    }
+
+    return pending;
   }
-
-  return authReadyP;
 }
 
-export function resetAnonAuthCache(): void {
-  cachedUid = null;
-  authReadyP = null;
-  startedAnonSignIn = false;
-}
+export const authenticator: Authenticator = new Authenticator();

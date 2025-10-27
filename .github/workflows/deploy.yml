@@ -28,12 +28,7 @@ jobs:
       - name: Login to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
       - name: Build and push offline images
-        env:
-          OWNER: slava-nikulin
-          REPO: peach-share
-        run: |
-          chmod +x docker/scripts/offline-push.sh
-          ./docker/scripts/offline-push.sh emu
+        run: ./docker/scripts/offline-push.sh emu
 
       # Подготовка артефакта Pages
       - uses: actions/configure-pages@v5

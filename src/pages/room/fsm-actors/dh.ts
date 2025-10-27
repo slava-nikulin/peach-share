@@ -11,7 +11,7 @@ import {
   toBase64Url,
   utf8,
 } from '../../../lib/crypto';
-import { firebaseEnv } from '../config/firebase';
+import { getRoomFirebaseEnv, type RoomFirebaseEnvironment } from '../config/firebase';
 import type { Role } from '../types';
 
 interface SessionContext {
@@ -57,6 +57,7 @@ interface StartDhInput {
 
 interface StartDhDeps {
   db?: Database;
+  env?: RoomFirebaseEnvironment;
 }
 
 interface StartDhResult {
@@ -75,8 +76,9 @@ class DiffieHellmanHandshake {
 
   constructor(input: StartDhInput, deps: StartDhDeps) {
     this.input = input;
-    if (!deps.db) firebaseEnv.reconnect();
-    this.database = deps.db ?? firebaseEnv.db;
+    const env = deps.env ?? getRoomFirebaseEnv();
+    if (!deps.db) env.reconnect();
+    this.database = deps.db ?? env.db;
   }
 
   public async execute(): Promise<StartDhResult> {

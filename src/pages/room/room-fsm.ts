@@ -9,7 +9,7 @@ import {
 } from 'xstate';
 import type { RtcEndpoint } from '../../lib/webrtc';
 import { getIceServers } from './config/ice';
-import { anonAuth } from './fsm-actors/auth';
+import { authenticator } from './fsm-actors/auth';
 import { RoomCleaner } from './fsm-actors/cleanup';
 import { createRoom } from './fsm-actors/create-room';
 import { startDH } from './fsm-actors/dh';
@@ -54,7 +54,7 @@ export const roomInitFSM: AnyStateMachine = setup({
   },
   actors: {
     auth: fromPromise(async () => {
-      const authId = await anonAuth();
+      const authId = await authenticator.anonAuth();
       return { authId };
     }),
     createRoom: fromPromise(async ({ input }: { input: { roomId: string; authId: string } }) => {

@@ -12,8 +12,9 @@ import {
 } from 'firebase/database';
 
 const env: ImportMetaEnv = import.meta.env;
-const LOCAL_HOSTS: Set<string> = new Set(['localhost', '127.0.0.1', '::1']);
-const LOOPBACK_IP_REGEX: RegExp = /^[0-9.]+$/;
+const LOCAL_HOSTS: Set<string> = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
+const NUMERIC_IPV4_REGEX: RegExp = /^(?:\d{1,3}\.){3}\d{1,3}$/;
+const LOCAL_SERVICE_HOST_REGEX: RegExp = /^[a-zA-Z0-9-]+$/;
 
 const currentPageHost = (): string => {
   const win = typeof window === 'undefined' ? undefined : window;
@@ -22,8 +23,9 @@ const currentPageHost = (): string => {
   return 'localhost';
 };
 
-const isLoopbackOrIp = (host: string): boolean =>
-  LOCAL_HOSTS.has(host) || LOOPBACK_IP_REGEX.test(host);
+const isLoopbackHost = (host: string): boolean => LOCAL_HOSTS.has(host) || host.startsWith('127.');
+
+const isNumericIp = (host: string): boolean => NUMERIC_IPV4_REGEX.test(host);
 
 const splitHostCandidates = (raw: string | undefined): string[] => {
   if (!raw) return [];
@@ -44,10 +46,16 @@ const toUrlHost = (candidate: string): string | null => {
   }
 };
 
+const isAcceptableLocalHost = (host: string): boolean =>
+  isLoopbackHost(host) ||
+  isNumericIp(host) ||
+  host.includes('.') ||
+  LOCAL_SERVICE_HOST_REGEX.test(host);
+
 const pickCandidateHost = (candidate: string, runningLocally: boolean): string | null => {
   const urlHost = toUrlHost(candidate);
   if (urlHost) {
-    if (!runningLocally || isLoopbackOrIp(urlHost) || urlHost.includes('.')) {
+    if (!runningLocally || isAcceptableLocalHost(urlHost)) {
       return urlHost;
     }
     return null;
@@ -57,7 +65,7 @@ const pickCandidateHost = (candidate: string, runningLocally: boolean): string |
     return candidate;
   }
 
-  if (isLoopbackOrIp(candidate) || candidate.includes('.')) {
+  if (isAcceptableLocalHost(candidate)) {
     return candidate;
   }
 
@@ -66,7 +74,7 @@ const pickCandidateHost = (candidate: string, runningLocally: boolean): string |
 
 const resolveEmulatorHost = (raw: string | undefined): string => {
   const pageHost = currentPageHost();
-  const runningLocally = isLoopbackOrIp(pageHost);
+  const runningLocally = isLoopbackHost(pageHost);
   const candidates = splitHostCandidates(raw);
   const fallbackHost = runningLocally ? '127.0.0.1' : pageHost;
 
@@ -77,6 +85,8 @@ const resolveEmulatorHost = (raw: string | undefined): string => {
 
   return fallbackHost;
 };
+
+export { resolveEmulatorHost as __resolveEmulatorHostForTests };
 
 export const USE_EMU: boolean = String(env.VITE_USE_EMULATORS) === 'true';
 export const OFFLINE: boolean = String(env.VITE_OFFLINE_MODE) === 'true';
@@ -236,10 +246,23 @@ export class RoomFirebaseEnvironment {
   }
 }
 
-export const firebaseEnv: RoomFirebaseEnvironment = new RoomFirebaseEnvironment();
+const defaultFirebaseEnv: RoomFirebaseEnvironment = new RoomFirebaseEnvironment();
+let activeFirebaseEnv: RoomFirebaseEnvironment = defaultFirebaseEnv;
+
+export const firebaseEnv: RoomFirebaseEnvironment = defaultFirebaseEnv;
+
+export const getRoomFirebaseEnv = (): RoomFirebaseEnvironment => activeFirebaseEnv;
+
+export const setRoomFirebaseEnv = (env: RoomFirebaseEnvironment): void => {
+  activeFirebaseEnv = env;
+};
+
+export const resetRoomFirebaseEnv = (): void => {
+  activeFirebaseEnv = defaultFirebaseEnv;
+};
 
 try {
-  firebaseEnv.connect();
+  defaultFirebaseEnv.connect();
 } catch (error) {
   console.warn('Initial Firebase connect failed:', error);
 }

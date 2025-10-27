@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
+const mockAuth = { currentUser: null } as unknown as import('firebase/auth').Auth;
+
 vi.mock('../config/firebase', () => ({
-  firebaseEnv: {
-    auth: { currentUser: null },
-  },
+  getRoomFirebaseEnv: () => ({
+    auth: mockAuth,
+  }),
 }));
 vi.mock('firebase/auth', async (importOriginal: () => Promise<typeof import('firebase/auth')>) => {
   const actual = await importOriginal();
@@ -15,8 +17,7 @@ vi.mock('firebase/auth', async (importOriginal: () => Promise<typeof import('fir
 });
 
 describe('anonAuth timeout', () => {
-  let anonAuth: (timeoutMs?: number) => Promise<string>;
-  let resetAnonAuthCache: () => void;
+  let authenticator: import('../../fsm-actors/auth').Authenticator;
   let fbAuth: typeof import('firebase/auth');
 
   beforeEach(async () => {
@@ -24,9 +25,8 @@ describe('anonAuth timeout', () => {
     vi.resetModules();
     fbAuth = await import('firebase/auth');
     const mod = await import('../../fsm-actors/auth');
-    anonAuth = mod.anonAuth;
-    resetAnonAuthCache = mod.resetAnonAuthCache;
-    resetAnonAuthCache();
+    authenticator = mod.authenticator;
+    authenticator.reset();
   });
 
   afterEach(() => {
@@ -35,7 +35,7 @@ describe('anonAuth timeout', () => {
   });
 
   it('auth_timeout', async () => {
-    const p = anonAuth(50);
+    const p = authenticator.anonAuth(50);
     const handled = p.catch((e) => e);
     await vi.advanceTimersByTimeAsync(60);
     const err = await handled;
@@ -44,7 +44,11 @@ describe('anonAuth timeout', () => {
   });
 
   it('deduplication: один signInAnonymously на несколько вызовов', async () => {
-    const p = Promise.all([anonAuth(50), anonAuth(50), anonAuth(50)]);
+    const p = Promise.all([
+      authenticator.anonAuth(50),
+      authenticator.anonAuth(50),
+      authenticator.anonAuth(50),
+    ]);
     const handled = p.catch((e) => e);
     await vi.advanceTimersByTimeAsync(60);
     await expect(handled).resolves.toMatchObject({ message: 'auth_timeout' });
