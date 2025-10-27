@@ -36,7 +36,7 @@ describe('createHomeNavActions', () => {
       }),
     );
 
-    expect(host.querySelector('a[href="/ca/rootCA.pem"]')).not.toBeNull();
+    expect(host.querySelector('a[href="/ca/peachshare-rootCA.crt"]')).not.toBeNull();
     expect(host.textContent).toContain('Download Root CA');
 
     dispose();
@@ -51,7 +51,7 @@ describe('createHomeNavActions', () => {
       }),
     );
 
-    expect(host.querySelector('a[href="/ca/rootCA.pem"]')).toBeNull();
+    expect(host.querySelector('a[href="/ca/peachshare-rootCA.crt"]')).toBeNull();
 
     dispose();
   });
@@ -73,7 +73,7 @@ describe('useHomeNavActions', () => {
         queueMicrotask(() => {
           const firstCall = setActions.mock.calls[0]?.[0] ?? null;
           const { host, dispose } = mountActions(firstCall);
-          expect(host.querySelector('a[href="/ca/rootCA.pem"]')).not.toBeNull();
+          expect(host.querySelector('a[href="/ca/peachshare-rootCA.crt"]')).not.toBeNull();
           dispose();
 
           disposeRoot();

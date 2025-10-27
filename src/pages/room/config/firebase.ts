@@ -75,6 +75,11 @@ const pickCandidateHost = (candidate: string, runningLocally: boolean): string |
 const resolveEmulatorHost = (raw: string | undefined): string => {
   const pageHost = currentPageHost();
   const runningLocally = isLoopbackHost(pageHost);
+
+  if (IN_EMU && OFFLINE && !runningLocally) {
+    return pageHost;
+  }
+
   const candidates = splitHostCandidates(raw);
   const fallbackHost = runningLocally ? '127.0.0.1' : pageHost;
 
