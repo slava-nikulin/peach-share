@@ -1,30 +1,76 @@
 #!/usr/bin/env bash
-# wifi-ap-min.sh — robust NM-based AP (Ubuntu/Manjaro)
+# wifi-ap-min-daemon.sh — disposable AP via NetworkManager (Ubuntu/Manjaro)
+# Запуск и остановка по Ctrl+C. Профили не сохраняются на диск.
 set -Eeuo pipefail
 
-DEBUG=0 TRACE=0
+DEBUG=0 TRACE=0 TEE=0
 NM_TIMEOUT_ADD=10
 NM_TIMEOUT_UP=20
 NM_TIMEOUT_MOD=10
 DEV_TIMEOUT_DISC=5
 
-fail(){ echo "status: FAIL"; echo "reason: $*"; exit 1; }
-dbg(){ [[ $DEBUG -eq 1 ]] && echo "[DBG $(date +%H:%M:%S)] $*" >&2; }
+out(){ echo "$1"; ((TEE)) && echo "$1" >&2; return 0; }
+fail(){ out "status: FAIL"; out "reason: $*"; exit 1; }
+dbg(){ [[ $DEBUG -eq 1 ]] && echo "[DBG $(date +%H:%M:%S)] $*" >&2; return 0; }
 have(){ command -v "$1" >/dev/null 2>&1; }
-TIMEOUT_BIN="$(command -v timeout || true)"
-run(){ local t="$1"; shift; if [[ -n "$TIMEOUT_BIN" ]]; then dbg "RUN($t): $*"; "$TIMEOUT_BIN" "$t" "$@"; else dbg "RUN(no-timeout,$t): $*"; "$@"; fi; }
 
-# печатаем краткую причину даже без --debug
-trap 'rc=$?; line=${BASH_LINENO[0]}; cmd=${BASH_COMMAND}; [[ $DEBUG -eq 1 ]] && dbg "ERR line=$line rc=$rc cmd=$cmd"; echo "status: FAIL"; echo "reason: unexpected error at line $line: $cmd (rc=$rc)"; exit $rc' ERR
+TIMEOUT_BIN="$(command -v timeout || true)"
+run(){ local t="$1"; shift; if [[ -n "$TIMEOUT_BIN" ]]; then dbg "RUN t=$t $*"; timeout "$t" "$@"; else dbg "RUN $*"; "$@"; fi; }
+
+# состояние для уборки
+CREATED_UUID=""; CREATED_NAME=""; CREATED_IFACE=""; SLEEP_PID=""
+
+# ловушки
+setup_err(){ local line="${BASH_LINENO[0]}" rc="$?"; dbg "ERR line=$line rc=$rc uuid=$CREATED_UUID"; _cleanup; out "status: FAIL"; out "reason: unexpected error at line $line (rc=$rc)"; exit "$rc"; }
+trap 'setup_err' ERR
+
+_cleanup(){
+  # 1. убить sleep, чтобы не висел процесс демона
+  if [[ -n "${SLEEP_PID:-}" ]]; then
+    kill "$SLEEP_PID" >/dev/null 2>&1 || true
+    wait "$SLEEP_PID" 2>/dev/null || true
+    SLEEP_PID=""
+  fi
+
+  # 2. на всякий случай отцепить интерфейс от AP
+  if [[ -n "${CREATED_IFACE:-}" ]]; then
+    nmcli device disconnect "$CREATED_IFACE" >/dev/null 2>&1 || true
+  fi
+
+  # 3. пройти по всем подключениям myhotspot* и снести каждое
+  #    важно: кавычки нормальные, awk внутри одинарных кавычек
+  while IFS=$'\t' read -r uuid name; do
+    [[ -n "$uuid" ]] || continue
+    out "cleanup: deleting $name ($uuid)"
+
+    nmcli connection down   uuid "$uuid" >/dev/null 2>&1 || true
+    nmcli  connection delete uuid "$uuid"
+  done < <(
+    nmcli -g UUID,NAME connection show \
+    | awk -F: '$2 ~ /^myhotspot/ {printf "%s\t%s\n",$1,$2}'
+  )
+
+  # 4. перезагрузить список подключений в NM
+  nmcli connection reload >/dev/null 2>&1 || true
+}
+
+exit_trap(){ local rc=$?; dbg "EXIT rc=$rc uuid=$CREATED_UUID iface=$CREATED_IFACE"; _cleanup; if (( rc==130 )); then out "status: STOPPED"; fi; }
+trap 'exit_trap' EXIT INT TERM
 
 nm_ready(){
   have nmcli || fail "nmcli not found (install NetworkManager)"
-  systemctl is-active --quiet NetworkManager || { dbg "start NM"; systemctl start NetworkManager; }
+  systemctl is-active --quiet NetworkManager || systemctl start NetworkManager || fail "cannot start NetworkManager"
   nmcli radio wifi on >/dev/null 2>&1 || true
   have rfkill && rfkill unblock wifi || true
 }
 
-pick_iface(){ nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="wifi"{print $1; exit}'; }
+pick_iface(){
+  local out dev typ st
+  out="$(nmcli -t -f DEVICE,TYPE,STATE device 2>/dev/null || true)"
+  while IFS=: read -r dev typ st; do [[ "$typ" == "wifi" && "$st" == "disconnected" ]] && { echo "$dev"; return 0; }; done <<<"$out"
+  while IFS=: read -r dev typ st; do [[ "$typ" == "wifi" ]] && { echo "$dev"; return 0; }; done <<<"$out"
+  return 1
+}
 
 check_ap_cap(){
   if have iw; then
@@ -37,45 +83,22 @@ check_ap_cap(){
   fi
 }
 
-purge_by_name(){
-  local name="$1" loop=0
-  while :; do
-    mapfile -t uuids < <(nmcli -g UUID,NAME connection show | awk -F: -v n="$name" '$2==n{print $1}')
-    ((${#uuids[@]}==0)) && break
-    for u in "${uuids[@]}"; do
-      [[ -n "$u" ]] || continue
-      nmcli -q0 connection down uuid "$u" >/dev/null 2>&1 || true
-      nmcli -q0 connection delete uuid "$u" >/dev/null 2>&1 || true
-    done
-    ((loop++>5)) && break
-    sleep 0.1
-  done
-  nmcli connection reload >/dev/null 2>&1 || true
-}
-
-name_exists(){ nmcli -g NAME connection show | awk -v n="$1" '$0==n{e=1} END{exit(e?0:1)}'; }
+rand_suffix(){ od -vAn -N4 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n' | cut -c1-6; }
 
 get_ip(){
-  local iface="$1" ip=""
+  local iface="$1" ip out first
   for _ in {1..25}; do
-    ip="$(nmcli -g IP4.ADDRESS dev show "$iface" 2>/dev/null | head -n1 | cut -d/ -f1)"
+    out="$(nmcli -g IP4.ADDRESS dev show "$iface" 2>/dev/null || true)"; first="${out%%$'\n'*}"; ip="${first%%/*}"
     [[ -n "$ip" ]] && { echo "$ip"; return 0; }
-    ip=$(ip -4 -o addr show dev "$iface" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
+    out="$(ip -4 -o addr show dev "$iface" 2>/dev/null || true)"; first="${out%%$'\n'*}"
+    local a b c d e; read -r a b c d e <<<"$first"; [[ "$c" == "inet" ]] && ip="${d%%/*}"
     [[ -n "$ip" ]] && { echo "$ip"; return 0; }
     sleep 0.2
-  done
-  echo ""
-}
-
-maybe_lock(){
-  if have flock; then
-    exec {LOCKFD}<>/run/lock/wifi-ap-min.lock 2>/dev/null || exec {LOCKFD}<>/tmp/wifi-ap-min.lock
-    flock -n "$LOCKFD" || fail "another instance is running"
-  fi
+  done; echo ""
 }
 
 start_ap(){
-  local SSID="" PASS="" IFACE="" CON="myhotspot"
+  local SSID="" PASS="" IFACE="" CON="myhotspot" ENC=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --ssid) SSID="${2:-}"; shift 2;;
@@ -83,103 +106,83 @@ start_ap(){
       --iface) IFACE="${2:-}"; shift 2;;
       --name) CON="${2:-}"; shift 2;;
       --debug) DEBUG=1; shift;;
-      --trace) TRACE=1; shift;;
+      --trace) TRACE=1; set -x; shift;;
+      --tee-stderr) TEE=1; shift;;
       *) fail "unknown arg: $1";;
     esac
   done
-  [[ -n "$SSID" ]] || fail "--ssid is required"
-  [[ -n "$PASS" ]] || fail "--pass is required"
-  [[ ${#PASS} -ge 8 && ${#PASS} -le 63 ]] || fail "password must be 8–63 chars"
-  [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run with sudo"
-  [[ $TRACE -eq 1 ]] && { export PS4='+ [TRACE $(date "+%H:%M:%S")] '; set -x; }
 
-  maybe_lock
+  [[ -n "$SSID" ]] || fail "--ssid is required"
+  (( ${#SSID} <= 32 )) || fail "ssid must be <=32 chars"
+  [[ -n "$PASS" ]] || fail "--pass is required"
+  (( ${#PASS} >= 8 && ${#PASS} <= 63 )) || fail "password must be 8-63 chars"
+  [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run with sudo"
+
   nm_ready
   check_ap_cap
 
-  IFACE="${IFACE:-$(pick_iface)}"
+  IFACE="${IFACE:-$(pick_iface)}"; [[ -n "$IFACE" ]] || fail "no wifi interface"
+  dbg "iface=$IFACE name=$CON"
+
+  # гарантируем отсутствие коллизий имен в ранних сессиях
+  if nmcli -g NAME con show | awk -v n="$CON" '$0==n{e=1} END{exit(e?0:1)}'; then
+    CON="${CON}-$(rand_suffix)"; dbg "renamed to $CON"
+  fi
+
+  # отцепляем всё текущее
   run ${DEV_TIMEOUT_DISC}s nmcli device disconnect "$IFACE" >/dev/null 2>&1 || true
 
-  purge_by_name "$CON"
-  if name_exists "$CON"; then CON="${CON}-$(date +%s)"; fi
+  CREATED_NAME="$CON"; CREATED_IFACE="$IFACE"
 
-  # WPA3-SAE first (PMF required)
-  run ${NM_TIMEOUT_ADD}s nmcli connection add type wifi ifname "$IFACE" con-name "$CON" autoconnect no ssid "$SSID" >/dev/null
-  run ${NM_TIMEOUT_MOD}s nmcli connection modify "$CON" \
+  # создаем временный профиль и временно модифицируем (не на диск)
+  run ${NM_TIMEOUT_ADD}s nmcli con add save no type wifi ifname "$IFACE" con-name "$CON" autoconnect no ssid "$SSID" >/dev/null
+  run ${NM_TIMEOUT_MOD}s nmcli con modify --temporary "$CON" \
       802-11-wireless.mode ap \
       ipv4.method shared ipv6.method ignore \
       802-11-wireless-security.key-mgmt sae \
       802-11-wireless-security.pmf required \
-      802-11-wireless-security.psk "$PASS" >/dev/null
+      802-11-wireless-security.psk "$PASS" >/dev/null || true
 
-  if run ${NM_TIMEOUT_UP}s nmcli connection up "$CON" >/dev/null 2>&1; then
+  # пробуем WPA3, иначе WPA2-AES
+  if run ${NM_TIMEOUT_UP}s nmcli con up "$CON" >/dev/null 2>&1; then
     ENC="WPA3-SAE"
   else
-    # fallback WPA2-PSK
-    purge_by_name "$CON"
-    run ${NM_TIMEOUT_ADD}s nmcli connection add type wifi ifname "$IFACE" con-name "$CON" autoconnect no ssid "$SSID" >/dev/null
-    run ${NM_TIMEOUT_MOD}s nmcli connection modify "$CON" \
+    nmcli -q0 con down "$CON" >/dev/null 2>&1 || true
+    # пересоздаём временно
+    nmcli -q0 con del "$CON" >/dev/null 2>&1 || true
+    run ${NM_TIMEOUT_ADD}s nmcli con add save no type wifi ifname "$IFACE" con-name "$CON" autoconnect no ssid "$SSID" >/dev/null
+    run ${NM_TIMEOUT_MOD}s nmcli con modify --temporary "$CON" \
         802-11-wireless.mode ap \
         ipv4.method shared ipv6.method ignore \
         802-11-wireless-security.key-mgmt wpa-psk \
+        802-11-wireless-security.proto rsn \
+        802-11-wireless-security.pairwise ccmp \
+        802-11-wireless-security.group ccmp \
         802-11-wireless-security.pmf optional \
         802-11-wireless-security.psk "$PASS" >/dev/null
-    run ${NM_TIMEOUT_UP}s nmcli connection up "$CON" >/dev/null || fail "cannot start AP with WPA3 or WPA2"
+    run ${NM_TIMEOUT_UP}s nmcli con up "$CON" >/dev/null || fail "cannot start AP with WPA3 or WPA2"
     ENC="WPA2-PSK"
   fi
 
-  local HOST_IP
-  HOST_IP="$(get_ip "$IFACE")"
-  [[ -n "$HOST_IP" ]] || fail "AP up but no IPv4 on $IFACE"
+  CREATED_UUID="$(nmcli -g connection.uuid con show "$CON" 2>/dev/null || true)"
 
-  echo "status: OK"
-  echo "encryption: $ENC"
-  echo "host_ip: $HOST_IP"
+  local HOST_IP; HOST_IP="$(get_ip "$IFACE")"; [[ -n "$HOST_IP" ]] || fail "AP up but no IPv4 on $IFACE"
+
+  out "status: OK"
+  out "ssid: $SSID"
+  out "iface: $IFACE"
+  out "encryption: $ENC"
+  out "host_ip: $HOST_IP"
+
+  # демонизируемся: держим процесс до Ctrl+C; ERR-trap больше не нужен
+  trap - ERR
+  [[ $DEBUG -eq 1 ]] && echo "info: AP running. Press Ctrl+C to stop." >&2
+  sleep infinity & SLEEP_PID=$!
+  wait "$SLEEP_PID"
 }
 
-stop_ap(){
-  local CON="myhotspot" IFACES=()
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --name) CON="${2:-}"; shift 2;;
-      --debug) DEBUG=1; shift;;
-      --trace) TRACE=1; shift;;
-      *) fail "unknown arg: $1";;
-    esac
-  done
-  [[ "${EUID:-$(id -u)}" -eq 0 ]] || fail "run with sudo"
-  have nmcli || fail "nmcli not found"
-  [[ $TRACE -eq 1 ]] && { export PS4='+ [TRACE $(date "+%H:%M:%S")] '; set -x; }
-
-  # collect ifaces tied to this connection name
-  mapfile -t uuids < <(nmcli -g UUID,NAME connection show | awk -F: -v n="$CON" '$2==n{print $1}')
-  for u in "${uuids[@]}"; do
-    [[ -n "$u" ]] || continue
-    ifname="$(nmcli -g connection.interface-name connection show uuid "$u" 2>/dev/null | head -n1)"
-    [[ -n "$ifname" ]] && IFACES+=("$ifname")
-    nmcli -q0 connection down uuid "$u" >/dev/null 2>&1 || true
-    nmcli -q0 connection delete uuid "$u" >/dev/null 2>&1 || true
-  done
-
-  # fallback: if no iface captured, consider all wifi ifaces
-  if ((${#IFACES[@]}==0)); then
-    mapfile -t IFACES < <(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="wifi"{print $1}')
-  fi
-  # unique and disconnect
-  declare -A seen
-  for d in "${IFACES[@]}"; do
-    [[ -n "$d" ]] || continue
-    [[ -n "${seen[$d]:-}" ]] && continue
-    seen[$d]=1
-    nmcli device disconnect "$d" >/dev/null 2>&1 || true
-  done
-
-  purge_by_name "$CON" || true
-  echo "status: OK"
-}
-
+# интерфейс запуска
 case "${1:-}" in
-  start) shift; start_ap "$@";;
-  stop)  shift; stop_ap "$@";;
-  *) fail "usage: sudo $0 start --ssid <SSID> --pass <PASSWORD> [--iface wlan0] [--name myhotspot] [--debug] [--trace] | stop [--name myhotspot] [--debug] [--trace]";;
+  --ssid|--pass|--password|--iface|--name|--debug|--trace|--tee-stderr) start_ap "$@";;
+  *) fail "usage: sudo $0 --ssid <SSID> --pass <PASSWORD> [--iface wlan0] [--name myhotspot] [--tee-stderr] [--debug] [--trace]";;
 esac

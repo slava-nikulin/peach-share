@@ -8,7 +8,8 @@ SERVER_KEY="$CERT_DIR/server.key"
 TRAEFIK_DYNAMIC="$CERT_DIR/traefik-certs.yml"
 
 HOST_IP="${HOST_LAN_IP:?HOST_LAN_IP not set}"
-EXPIRY_GRACE_SEC=86400
+LEAF_ROTATE_DAYS_BEFORE_EXPIRY="${LEAF_ROTATE_DAYS_BEFORE_EXPIRY:-1}"
+EXPIRY_GRACE_SEC="$(( LEAF_ROTATE_DAYS_BEFORE_EXPIRY * 24 * 3600 ))"
 FORCE_NEW_CA="${FORCE_NEW_CA:-false}"
 
 mkdir -p "$CERT_DIR" "$CAROOT_DIR"
@@ -32,8 +33,8 @@ leaf_not_expiring() {
 leaf_has_ip_and_localhost() {
   local dump
   dump="$(openssl x509 -in "$SERVER_CRT" -noout -text | sed -n '/Subject Alternative Name/,$p')"
-  echo "$dump" | grep -q "IP Address:$HOST_IP" || return 1
-  echo "$dump" | grep -q "DNS:localhost"      || return 1
+  echo "$dump" | grep -q "IP Address:$HOST_IP"   || return 1
+  echo "$dump" | grep -q "DNS:localhost"         || return 1
   return 0
 }
 
@@ -67,25 +68,23 @@ fi
 if ! leaf_exists; then
   regen_leaf
 else
-  # mismatch between leaf issuer and CA? -> regen both CA+leaf полностью
   if ! leaf_issuer_eq_ca_subject; then
     echo "mkcert: leaf signed by different CA. Rotating CA+leaf"
     regen_ca
     regen_leaf
   else
-    # leaf signed by our CA, но может быть просрочен или без нужного IP
-    if ! leaf_not_expiring || ! leaf_has_ip; then
+    if ! leaf_not_expiring || ! leaf_has_ip_and_localhost; then
       regen_leaf
     fi
   fi
 fi
 
-# 3. публикуем корень для скачивания
+# 3. publish CA for clients to download and install
 if [ -d /certs-public ]; then
   cp "$CAROOT_DIR/rootCA.pem" /certs-public/peachshare-rootCA.crt
 fi
 
-# 4. traefik dynamic
+# 4. traefik dynamic config
 cat > "$TRAEFIK_DYNAMIC" <<EOF
 tls:
   certificates:
@@ -98,7 +97,7 @@ tls:
         keyFile: /certs/server.key
 EOF
 
-# 5. traefik run
+# 5. run Traefik
 exec traefik \
   --entrypoints.websecure.address=:443 \
   --entrypoints.websecure_alt.address=:8443 \
