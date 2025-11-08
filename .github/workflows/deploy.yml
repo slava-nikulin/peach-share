@@ -1,8 +1,18 @@
 name: Deploy and Offline Push
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_deploy:
+        description: 'Deploy GitHub Pages?'
+        type: boolean
+        required: true
+        default: false
+      run_offline:
+        description: 'Build offline images?'
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
@@ -12,6 +22,7 @@ permissions:
 
 jobs:
   offline-images:
+    if: github.event.inputs.run_offline == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -23,29 +34,34 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-
       - name: Login to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
       - name: Build and push offline images
         run: ./docker/scripts/offline-push.sh emu
 
-      # Подготовка артефакта Pages
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
-        with:
-          path: dist
-
-  # Деплой на GitHub Pages
   deploy:
-    needs: offline-images
+    if: github.event.inputs.run_deploy == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
       - name: Deploy to Pages
         id: deployment
         uses: actions/deploy-pages@v4
-        with:
-          artifact_name: github-pages
