@@ -1,7 +1,9 @@
-export function FullscreenSpinner() {
+import type { JSX } from 'solid-js';
+
+export function FullscreenSpinner(): JSX.Element {
   return (
     <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-white/70 dark:bg-slate-900/70">
-      <div role="status">
+      <output class="block text-center" aria-live="polite">
         <svg
           aria-hidden="true"
           class="h-12 w-12 animate-spin fill-blue-600 text-gray-200 dark:text-gray-600"
@@ -18,7 +20,7 @@ export function FullscreenSpinner() {
           />
         </svg>
         <span class="sr-only">Loading...</span>
-      </div>
+      </output>
     </div>
   );
 }

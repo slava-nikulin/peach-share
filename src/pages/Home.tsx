@@ -4,8 +4,8 @@ import type { Component } from 'solid-js';
 import { useNavActions } from '../components/nav-actions';
 import { RoomModal } from '../components/RoomModal';
 import { genSecret32, hkdfPathId, toBase64Url } from '../lib/crypto';
+import { useHomeNavActions } from './home/components/nav';
 import { createJoinHandlers } from './home/join';
-import { useHomeNavActions } from './home/nav';
 
 export const Home: Component = () => {
   const { setNavActions } = useNavActions();

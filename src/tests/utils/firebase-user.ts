@@ -1,12 +1,14 @@
 import { deleteApp, type FirebaseApp, getApp, initializeApp } from 'firebase/app';
 import { type Auth, connectAuthEmulator, getAuth, signInAnonymously, signOut } from 'firebase/auth';
 import { connectDatabaseEmulator, type Database, getDatabase } from 'firebase/database';
+import { RtdbConnector } from '../../pages/room/lib/RtdbConnector';
 
 export interface TestFirebaseUserCtx {
   app: FirebaseApp;
   auth: Auth;
   db: Database;
   uid: string;
+  rtdb: RtdbConnector;
   cleanup: () => Promise<void>;
 }
 
@@ -31,19 +33,42 @@ export async function createTestFirebaseUser(label: string = 'test'): Promise<Te
 
   const database = getDatabase(app, dbUrl);
   connectDatabaseEmulator(database, dbHost, dbPort);
+  const rtdb = new RtdbConnector({ app });
 
   return {
     app,
     auth,
     db: database,
     uid: user.uid,
+    rtdb,
     cleanup: async () => {
+      rtdb.cleanup();
       await signOut(auth).catch(() => {});
       await deleteApp(app).catch(() => {});
     },
   };
 }
 
+const withTimeout = (promise: Promise<void>, timeoutMs: number): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(), timeoutMs);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+
 export async function cleanupTestFirebaseUsers(contexts: TestFirebaseUserCtx[]): Promise<void> {
-  await Promise.all(contexts.map((ctx) => ctx.cleanup()));
+  await Promise.all(
+    contexts.map((ctx) =>
+      withTimeout(ctx.cleanup(), 15_000).catch(() => {
+        /* swallow cleanup errors to avoid hanging tests */
+      }),
+    ),
+  );
 }

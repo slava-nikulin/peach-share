@@ -41,6 +41,7 @@ export function setupTestEnv(opts: Opts): FirebaseEnvSetup {
 
   vi.stubEnv('VITE_EMULATOR_RTD_HOST', hostname);
   vi.stubEnv('VITE_EMULATOR_RTDB_PORT', String(dbPort));
+  vi.stubEnv('VITE_EMULATOR_RTD_NS', `${projectId}-default-rtdb`);
 
   if (typeof authPort === 'number') {
     vi.stubEnv('VITE_EMULATOR_AUTH', 'true');
@@ -59,7 +60,7 @@ export function setupTestEnv(opts: Opts): FirebaseEnvSetup {
     vi.stubEnv(k, String(v));
   }
 
-  const windowLike = { location: { hostname } };
+  const windowLike = { location: { hostname, protocol: 'http:' } };
   (globalThis as Record<string, unknown>).window = windowLike;
   (globalThis as Record<string, unknown>).self = windowLike;
 

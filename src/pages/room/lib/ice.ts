@@ -1,4 +1,4 @@
-const GOOGLE_STUN_SERVERS = [
+const GOOGLE_STUN_SERVERS: readonly string[] = [
   'stun:stun.l.google.com:19302',
   'stun:stun1.l.google.com:19302',
   'stun:stun2.l.google.com:19302',

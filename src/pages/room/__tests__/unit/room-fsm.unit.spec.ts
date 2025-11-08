@@ -1,17 +1,37 @@
-import { goOffline, remove } from 'firebase/database';
+import { remove } from 'firebase/database';
+import type { Mock } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActor } from 'xstate';
 import { fromPromise } from 'xstate/actors';
 import type { RtcEndpoint } from '../../../../lib/webrtc';
+import type { RtdbConnector } from '../../lib/RtdbConnector';
 import { roomInitFSM } from '../../room-fsm';
 import type { RoomRecord } from '../../types';
+
+const {
+  refMock,
+}: {
+  refMock: Mock<
+    (db: unknown, path: string) => { key?: string; parent?: { key?: string } } | undefined
+  >;
+} = vi.hoisted(() => ({
+  refMock: vi.fn((_: unknown, path: string) => {
+    const segments = path.split('/');
+    const key = segments[segments.length - 1];
+    const parentKey = segments.length > 1 ? segments[segments.length - 2] : undefined;
+    return {
+      key,
+      parent: parentKey ? { key: parentKey } : undefined,
+    };
+  }),
+}));
 
 vi.mock('firebase/database', async () => {
   const actual = await vi.importActual<typeof import('firebase/database')>('firebase/database');
   return {
     ...actual,
     remove: vi.fn(async () => {}),
-    goOffline: vi.fn(),
+    ref: refMock,
   };
 });
 
@@ -28,13 +48,33 @@ const dummyEp = (): RtcEndpoint => ({
   ready: Promise.resolve(),
 });
 
+interface RtdbStub {
+  db: symbol;
+  connect: ReturnType<typeof vi.fn>;
+  ensureOnline: ReturnType<typeof vi.fn>;
+  cleanup: ReturnType<typeof vi.fn>;
+  instance: RtdbConnector;
+}
+
+const createRtdbStub = (label: string): RtdbStub => {
+  const db = Symbol(label);
+  const connect = vi.fn(() => db);
+  const ensureOnline = vi.fn();
+  const cleanup = vi.fn();
+  const instance = {
+    connect,
+    ensureOnline,
+    cleanup,
+  } as unknown as RtdbConnector;
+  return { db, connect, ensureOnline, cleanup, instance };
+};
+
 describe('room-fsm component tests', () => {
   const removeMock = vi.mocked(remove);
-  const goOfflineMock = vi.mocked(goOffline);
 
   beforeEach(() => {
     removeMock.mockClear();
-    goOfflineMock.mockClear();
+    refMock.mockClear();
   });
 
   const enc32 = (v: number = 7): Uint8Array => new Uint8Array(32).fill(v);
@@ -58,20 +98,22 @@ describe('room-fsm component tests', () => {
     };
 
     const ep = dummyEp(); // NEW
+    const rtdb = createRtdbStub('create-db');
 
     const fsm = roomInitFSM.provide({
       actors: {
-        auth: fromPromise(async () => ({ authId: 'auth_uid' })),
         createRoom: fromPromise(
-          async ({ input }: { input: { roomId: string; authId: string } }) => {
+          async ({ input }: { input: { roomId: string; authId: string; rtdb: RtdbConnector } }) => {
             called.createRoom(input);
             return { roomReady: true, room: roomMock };
           },
         ),
-        joinRoom: fromPromise(async () => {
-          called.joinRoom();
-          return { roomReady: true, room: roomMock };
-        }),
+        joinRoom: fromPromise(
+          async ({ input }: { input: { roomId: string; authId: string; rtdb: RtdbConnector } }) => {
+            called.joinRoom(input);
+            return { roomReady: true, room: roomMock };
+          },
+        ),
         dh: fromPromise(async () => ({ encKey: enc32(1), sas: '123456' })),
         rtc: fromPromise(async () => ({ rtcReady: true, endpoint: ep })),
       },
@@ -83,7 +125,15 @@ describe('room-fsm component tests', () => {
       },
     });
 
-    const actor = createActor(fsm, { input: { roomId: 'r1', intent: 'create', secret: 's' } });
+    const actor = createActor(fsm, {
+      input: {
+        roomId: 'r1',
+        intent: 'create',
+        secret: 's',
+        authId: 'auth_uid',
+        rtdb: rtdb.instance,
+      },
+    });
     const completion = new Promise<void>((resolve, reject) => {
       const sub = actor.subscribe((s) => {
         s.tags.forEach((t) => {
@@ -106,7 +156,11 @@ describe('room-fsm component tests', () => {
     expect(snap.status).toBe('done');
     expect(snap.context.authId).toBe('auth_uid');
     expect(seen).toEqual(expect.arrayContaining(['creating', 'dh', 'rtc', 'cleanup']));
-    expect(called.createRoom).toHaveBeenCalledWith({ roomId: 'r1', authId: 'auth_uid' });
+    expect(called.createRoom).toHaveBeenCalledWith({
+      roomId: 'r1',
+      authId: 'auth_uid',
+      rtdb: rtdb.instance,
+    });
     expect(called.joinRoom).not.toHaveBeenCalled();
     expect(called.vmRoomReady).toHaveBeenCalledTimes(1);
 
@@ -128,7 +182,10 @@ describe('room-fsm component tests', () => {
     const cleanupRef = removeMock.mock.calls[0]?.[0] as { key?: string; parent?: { key?: string } };
     expect(cleanupRef?.key).toBe('r1');
     expect(cleanupRef?.parent?.key).toBe('rooms');
-    expect(goOfflineMock).toHaveBeenCalledTimes(1);
+    expect(rtdb.connect).toHaveBeenCalledTimes(1);
+    expect(rtdb.ensureOnline).toHaveBeenCalledTimes(1);
+    expect(rtdb.cleanup).toHaveBeenCalledTimes(1);
+    expect(refMock).toHaveBeenCalledWith(rtdb.db, 'rooms/r1');
 
     actor.stop();
   });
@@ -153,20 +210,22 @@ describe('room-fsm component tests', () => {
     };
 
     const ep = dummyEp(); // NEW
+    const rtdb = createRtdbStub('join-db');
 
     const fsm = roomInitFSM.provide({
       actors: {
-        auth: fromPromise(async () => ({ authId: 'auth_uid' })),
         createRoom: fromPromise(
-          async ({ input }: { input: { roomId: string; authId: string } }) => {
+          async ({ input }: { input: { roomId: string; authId: string; rtdb: RtdbConnector } }) => {
             called.createRoom(input);
             return { roomReady: true, room: roomMock };
           },
         ),
-        joinRoom: fromPromise(async ({ input }: { input: { roomId: string; authId: string } }) => {
-          called.joinRoom(input);
-          return { roomReady: true, room: roomMock };
-        }),
+        joinRoom: fromPromise(
+          async ({ input }: { input: { roomId: string; authId: string; rtdb: RtdbConnector } }) => {
+            called.joinRoom(input);
+            return { roomReady: true, room: roomMock };
+          },
+        ),
         dh: fromPromise(async () => ({ encKey: enc32(2), sas: '654321' })),
         rtc: fromPromise(async () => ({ rtcReady: true, endpoint: ep })),
       },
@@ -178,7 +237,15 @@ describe('room-fsm component tests', () => {
       },
     });
 
-    const actor = createActor(fsm, { input: { roomId: 'r2', intent: 'join', secret: 's' } });
+    const actor = createActor(fsm, {
+      input: {
+        roomId: 'r2',
+        intent: 'join',
+        secret: 's',
+        authId: 'auth_uid',
+        rtdb: rtdb.instance,
+      },
+    });
     const completion = new Promise<void>((resolve, reject) => {
       const sub = actor.subscribe((s) => {
         s.tags.forEach((t) => {
@@ -201,7 +268,11 @@ describe('room-fsm component tests', () => {
     expect(snap.status).toBe('done');
     expect(snap.context.authId).toBe('auth_uid');
     expect(seen).toEqual(expect.arrayContaining(['joining', 'dh', 'rtc', 'cleanup']));
-    expect(called.joinRoom).toHaveBeenCalledWith({ roomId: 'r2', authId: 'auth_uid' });
+    expect(called.joinRoom).toHaveBeenCalledWith({
+      roomId: 'r2',
+      authId: 'auth_uid',
+      rtdb: rtdb.instance,
+    });
     expect(called.createRoom).not.toHaveBeenCalled();
     expect(called.vmRoomReady).toHaveBeenCalledTimes(1);
 
@@ -219,8 +290,14 @@ describe('room-fsm component tests', () => {
     expect(called.vmRtcDone).toHaveBeenCalledTimes(1);
 
     expect(called.vmCleanupDone).toHaveBeenCalledTimes(1);
-    expect(removeMock).not.toHaveBeenCalled();
-    expect(goOfflineMock).toHaveBeenCalledTimes(1);
+    expect(removeMock).toHaveBeenCalledTimes(1);
+    const cleanupRef = removeMock.mock.calls[0]?.[0] as { key?: string; parent?: { key?: string } };
+    expect(cleanupRef?.key).toBe('r2');
+    expect(cleanupRef?.parent?.key).toBe('rooms');
+    expect(rtdb.connect).toHaveBeenCalledTimes(1);
+    expect(rtdb.ensureOnline).toHaveBeenCalledTimes(1);
+    expect(rtdb.cleanup).toHaveBeenCalledTimes(1);
+    expect(refMock).toHaveBeenCalledWith(rtdb.db, 'rooms/r2');
 
     actor.stop();
   });

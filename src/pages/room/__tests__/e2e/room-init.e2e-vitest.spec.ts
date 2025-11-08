@@ -4,6 +4,11 @@ import { toBase64Url } from '../../../../lib/crypto';
 import type { RtcEndpoint } from '../../../../lib/webrtc';
 import { setupTestEnv } from '../../../../tests/setup/env';
 import { startEmu, stopEmu } from '../../../../tests/setup/testcontainers';
+import {
+  cleanupTestFirebaseUsers,
+  createTestFirebaseUser,
+  type TestFirebaseUserCtx,
+} from '../../../../tests/utils/firebase-user';
 import type { RoomInitActor } from '../../room-fsm';
 import type { RoomRecord } from '../../types';
 
@@ -69,6 +74,7 @@ describe('room init e2e (concurrent)', () => {
   let db: Database;
   let emu: Awaited<ReturnType<typeof startEmu>>;
   let cleanupEnv: { restore: () => void };
+  const activeContexts: TestFirebaseUserCtx[] = [];
 
   let startRoomFlow: StartRoomFlow;
   const goOfflineMock = vi.mocked(goOffline);
@@ -89,7 +95,7 @@ describe('room init e2e (concurrent)', () => {
     vi.resetModules();
 
     goOfflineMock.mockClear();
-    const { firebaseEnv } = await import('../../lib/firebase');
+    const { firebaseEnv } = await import('../../../../tests/setup/firebase');
     db = firebaseEnv.db;
     ({ startRoomFlow } = await import('../../room-init'));
   }, 240_000);
@@ -98,6 +104,10 @@ describe('room init e2e (concurrent)', () => {
     if (!db || createdRoomIds.length === 0) return;
     const ids = createdRoomIds.splice(0);
     await Promise.all(ids.map((roomId) => remove(ref(db, `rooms/${roomId}`)).catch(() => {})));
+    if (activeContexts.length > 0) {
+      const contexts = activeContexts.splice(0);
+      await cleanupTestFirebaseUsers(contexts);
+    }
   }, 60_000);
 
   afterAll(async () => {
@@ -117,9 +127,19 @@ describe('room init e2e (concurrent)', () => {
       if (m) errors.push(m);
     };
 
-    // одновременный старт — join сам подождёт появления записи
-    const creator = startRoomFlow({ roomId, intent: 'create', secret }, onErr);
-    const joiner = startRoomFlow({ roomId, intent: 'join', secret }, onErr);
+    // создаём отдельных пользователей, чтобы правила RTDB пропускали транзакции
+    const creatorCtx = await createTestFirebaseUser('creator');
+    const joinerCtx = await createTestFirebaseUser('guest');
+    activeContexts.push(creatorCtx, joinerCtx);
+
+    const creator = startRoomFlow(
+      { roomId, intent: 'create', secret, authId: creatorCtx.uid, rtdb: creatorCtx.rtdb },
+      onErr,
+    );
+    const joiner = startRoomFlow(
+      { roomId, intent: 'join', secret, authId: joinerCtx.uid, rtdb: joinerCtx.rtdb },
+      onErr,
+    );
     const cVM = creator.vm;
     const jVM = joiner.vm;
 
@@ -212,6 +232,8 @@ describe('room init e2e (concurrent)', () => {
         const unsubscribe = ep.onJSON((message) => {
           unsubscribe();
           resolve(message);
+          creatorCtx.rtdb.cleanup();
+          joinerCtx.rtdb.cleanup();
         });
       });
 

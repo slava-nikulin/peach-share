@@ -39,7 +39,7 @@ describe('createRoom RTDB integration', () => {
     });
 
     ({ createRoom: createRoomFn } = await import('../../fsm-actors/create-room'));
-    await import('../../lib/firebase');
+    await import('../../../../tests/setup/firebase');
   }, 240_000);
 
   afterEach(async () => {
@@ -67,7 +67,7 @@ describe('createRoom RTDB integration', () => {
     const ownerCtx = await createTestFirebaseUser('owner');
     activeUsers.push(ownerCtx);
     roomsToCleanup.push({ roomId, ctx: ownerCtx });
-    await createRoomFn({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
+    await createRoomFn({ roomId, authId: ownerCtx.uid, rtdb: ownerCtx.rtdb });
 
     const stored = await readRoom(ownerCtx, roomId);
     expect(stored).not.toBeNull();
@@ -84,12 +84,12 @@ describe('createRoom RTDB integration', () => {
     activeUsers.push(ownerCtx);
     roomsToCleanup.push({ roomId, ctx: ownerCtx });
 
-    await createRoomFn({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
+    await createRoomFn({ roomId, authId: ownerCtx.uid, rtdb: ownerCtx.rtdb });
     const original = await readRoom(ownerCtx, roomId);
     expect(original).not.toBeNull();
 
     await expect(
-      createRoomFn({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db }),
+      createRoomFn({ roomId, authId: ownerCtx.uid, rtdb: ownerCtx.rtdb }),
     ).rejects.toThrowError('room_already_exists');
 
     const updated = await readRoom(ownerCtx, roomId);
@@ -101,7 +101,7 @@ describe('createRoom RTDB integration', () => {
     const ownerCtx = await createTestFirebaseUser('owner');
     activeUsers.push(ownerCtx);
     roomsToCleanup.push({ roomId, ctx: ownerCtx });
-    const room = await createRoomFn({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
+    const room = await createRoomFn({ roomId, authId: ownerCtx.uid, rtdb: ownerCtx.rtdb });
     expect(room.room_id).toBe(roomId);
     expect(room.owner).toBe(ownerCtx.uid);
     expect(Number(room.created_at)).toBeGreaterThan(0);

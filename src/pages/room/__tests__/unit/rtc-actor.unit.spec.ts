@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type RtcEndpoint, WebRTCConnection } from '../../../../lib/webrtc';
 import { startRTC } from '../../fsm-actors/rtc';
+import type { RtdbConnector } from '../../lib/RtdbConnector';
 import type { RoomRecord } from '../../types';
 
 type RefFactory = (db: unknown, path: string) => { path: string };
@@ -13,20 +14,6 @@ const { refMock }: { refMock: RefMock } = vi.hoisted((): { refMock: RefMock } =>
 
 vi.mock('firebase/database', () => ({
   ref: refMock,
-}));
-
-interface FirebaseEnvMock {
-  db: symbol;
-  reconnect: ReturnType<typeof vi.fn>;
-}
-
-const envMock: FirebaseEnvMock = {
-  db: Symbol('db'),
-  reconnect: vi.fn(),
-};
-
-vi.mock('../../config/firebase', () => ({
-  getRoomFirebaseEnv: () => envMock,
 }));
 
 const noop = (): void => undefined;
@@ -49,9 +36,30 @@ const createEndpoint = (ready: Promise<void>): RtcEndpoint => ({
   ready,
 });
 
+const createRtdbMock = (): {
+  db: symbol;
+  connect: ReturnType<typeof vi.fn>;
+  ensureOnline: ReturnType<typeof vi.fn>;
+  instance: RtdbConnector;
+} => {
+  const db = Symbol('db');
+  const connect = vi.fn(() => db);
+  const ensureOnline = vi.fn();
+  const instance = {
+    connect,
+    ensureOnline,
+  } as unknown as RtdbConnector;
+  return { db, connect, ensureOnline, instance };
+};
+
 describe('startRTC actor', () => {
+  beforeEach(() => {
+    refMock.mockClear();
+  });
+
   it('closes endpoint and rethrows when ready rejects', async () => {
     const readyError = new Error('ready_failed');
+    const rtdb = createRtdbMock();
     const endpoint = createEndpoint(Promise.reject(readyError));
     const createSpy = vi
       .spyOn(WebRTCConnection, 'create')
@@ -65,10 +73,14 @@ describe('startRTC actor', () => {
           encKey: new Uint8Array(32),
           timeoutMs: 5_000,
           stun: [],
+          rtdb: rtdb.instance,
         }),
       ).rejects.toBe(readyError);
 
       expect(endpoint.close).toHaveBeenCalledTimes(1);
+      expect(rtdb.connect).toHaveBeenCalledTimes(1);
+      expect(rtdb.ensureOnline).toHaveBeenCalledTimes(1);
+      expect(refMock).toHaveBeenCalledWith(rtdb.db, 'rooms/room-123');
       expect(createSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           abortSignal: undefined,
@@ -81,6 +93,7 @@ describe('startRTC actor', () => {
 
   it('passes abortSignal through and resolves on success', async () => {
     const endpoint = createEndpoint(Promise.resolve());
+    const rtdb = createRtdbMock();
     const createSpy = vi
       .spyOn(WebRTCConnection, 'create')
       .mockResolvedValue(endpoint as unknown as WebRTCConnection);
@@ -94,6 +107,7 @@ describe('startRTC actor', () => {
         timeoutMs: 5_000,
         stun: [{ urls: ['stun:example.org'] }],
         abortSignal: controller.signal,
+        rtdb: rtdb.instance,
       });
 
       expect(createSpy).toHaveBeenCalledWith(
@@ -101,6 +115,9 @@ describe('startRTC actor', () => {
           abortSignal: controller.signal,
         }),
       );
+      expect(rtdb.connect).toHaveBeenCalledTimes(1);
+      expect(rtdb.ensureOnline).toHaveBeenCalledTimes(1);
+      expect(refMock).toHaveBeenCalledWith(rtdb.db, 'rooms/room-123');
       expect(result.endpoint).toBe(endpoint);
       expect(endpoint.close).not.toHaveBeenCalled();
     } finally {

@@ -1,9 +1,11 @@
-import { mergeConfig } from 'vite';
+import { mergeConfig, type UserConfig } from 'vite';
 import { defineConfig } from 'vitest/config';
 import viteConfig from './vite.config';
 
+const baseViteConfig = viteConfig as UserConfig;
+
 export default mergeConfig(
-  viteConfig,
+  baseViteConfig,
   defineConfig({
     test: {
       globalSetup: ['src/tests/setup/global-testcontainers.ts'],
@@ -25,6 +27,11 @@ export default mergeConfig(
             environment: 'node',
             testTimeout: 120_000,
             hookTimeout: 120_000,
+            poolOptions: {
+              threads: {
+                singleThread: true,
+              },
+            },
           },
           ssr: { noExternal: ['wrtc'] },
         },

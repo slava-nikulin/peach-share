@@ -1,6 +1,13 @@
+import { hkdf as nobleHkdf } from '@noble/hashes/hkdf.js';
+import { hmac } from '@noble/hashes/hmac.js';
+import { sha256 as nobleSha256 } from '@noble/hashes/sha2.js';
 import type { Role } from '../pages/room/types';
 
 const te: TextEncoder = new TextEncoder();
+const EMPTY_UINT8: Uint8Array = new Uint8Array(0);
+
+const hasSubtleCrypto = (): boolean =>
+  typeof crypto !== 'undefined' && typeof crypto.subtle !== 'undefined';
 
 function toArrayBuffer(view: Uint8Array): ArrayBuffer {
   const { buffer, byteOffset, byteLength } = view;
@@ -28,8 +35,11 @@ export function bytesEq(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 export async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
-  const h = await crypto.subtle.digest('SHA-256', toArrayBuffer(bytes));
-  return new Uint8Array(h);
+  if (hasSubtleCrypto()) {
+    const h = await crypto.subtle.digest('SHA-256', toArrayBuffer(bytes));
+    return new Uint8Array(h);
+  }
+  return nobleSha256(bytes);
 }
 
 export async function hkdf(
@@ -38,29 +48,37 @@ export async function hkdf(
   info: Uint8Array,
   length: number,
 ): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey('raw', toArrayBuffer(ikm), 'HKDF', false, [
-    'deriveBits',
-  ]);
-  const params: HkdfParams = {
-    name: 'HKDF',
-    hash: 'SHA-256',
-    salt: salt ? toArrayBuffer(salt) : new ArrayBuffer(0),
-    info: toArrayBuffer(info),
-  };
-  const bits = await crypto.subtle.deriveBits(params, key, length * 8);
-  return new Uint8Array(bits);
+  if (hasSubtleCrypto()) {
+    const key = await crypto.subtle.importKey('raw', toArrayBuffer(ikm), 'HKDF', false, [
+      'deriveBits',
+    ]);
+    const params: HkdfParams = {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: salt ? toArrayBuffer(salt) : new ArrayBuffer(0),
+      info: toArrayBuffer(info),
+    };
+    const bits = await crypto.subtle.deriveBits(params, key, length * 8);
+    return new Uint8Array(bits);
+  }
+
+  const saltBytes = salt ?? EMPTY_UINT8;
+  return nobleHkdf(nobleSha256, ikm, saltBytes, info, length);
 }
 
 export async function hmacSHA256(keyBytes: Uint8Array, msg: Uint8Array): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    toArrayBuffer(keyBytes),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, toArrayBuffer(msg));
-  return new Uint8Array(sig);
+  if (hasSubtleCrypto()) {
+    const key = await crypto.subtle.importKey(
+      'raw',
+      toArrayBuffer(keyBytes),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const sig = await crypto.subtle.sign('HMAC', key, toArrayBuffer(msg));
+    return new Uint8Array(sig);
+  }
+  return hmac(nobleSha256, keyBytes, msg);
 }
 
 export async function hkdfPathId(

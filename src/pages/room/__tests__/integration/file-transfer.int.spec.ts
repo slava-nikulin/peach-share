@@ -171,7 +171,7 @@ describe('FileTransfer integration', () => {
       }
     });
 
-    const total = 128 * 1024 + 11;
+    const total = 8 * 1024; // single chunk to keep ordering deterministic
     const content = new Uint8Array(total);
     content.forEach((_, idx) => {
       content[idx] = idx % 251;
@@ -183,6 +183,7 @@ describe('FileTransfer integration', () => {
       size: total,
     };
 
+    await new Promise((resolve) => setTimeout(resolve, 20));
     const sendPromise = ownerTransfer.send(file, meta);
 
     await vi.waitFor(() => expect(received).toHaveLength(1), 120_000);

@@ -2,8 +2,8 @@
 
 import { createRoot, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import { describe, expect, it, vi } from 'vitest';
-import { createHomeNavActions, useHomeNavActions } from '../../Home';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createHomeNavActions, useHomeNavActions } from '../../home/components/nav';
 
 vi.mock('@solidjs/router', () => ({
   useNavigate: () => () => undefined,
@@ -16,23 +16,33 @@ interface MountedActions {
   dispose: () => void;
 }
 
-const mountActions = (actions: JSX.Element | null): MountedActions => {
+type ActionInput = JSX.Element | null | (() => JSX.Element | null);
+
+const mountActions = (actions: ActionInput): MountedActions => {
   const host = document.createElement('div');
-  if (!actions) {
+  if (typeof actions !== 'function' && !actions) {
     return { host, dispose: (): void => {} };
   }
 
-  const dispose = render(() => actions, host);
+  const factory =
+    typeof actions === 'function'
+      ? (actions as () => JSX.Element | null)
+      : (): JSX.Element | null => actions;
+  const dispose = render(factory, host);
   return { host, dispose };
 };
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe('createHomeNavActions', () => {
   it('includes download link when offline mode is visible', () => {
-    const { host, dispose } = mountActions(
+    vi.stubEnv('VITE_USE_LOCAL_SECURED_CONTEXT', 'true');
+    const { host, dispose } = mountActions(() =>
       createHomeNavActions({
         onJoinClick: noop,
         onCreateClick: noop,
-        showOfflineDownload: true,
       }),
     );
 
@@ -43,11 +53,11 @@ describe('createHomeNavActions', () => {
   });
 
   it('omits download link when offline mode is hidden', () => {
-    const { host, dispose } = mountActions(
+    vi.stubEnv('VITE_USE_LOCAL_SECURED_CONTEXT', 'false');
+    const { host, dispose } = mountActions(() =>
       createHomeNavActions({
         onJoinClick: noop,
         onCreateClick: noop,
-        showOfflineDownload: false,
       }),
     );
 
@@ -63,11 +73,11 @@ describe('useHomeNavActions', () => {
 
     await new Promise<void>((resolve) => {
       createRoot((disposeRoot) => {
+        vi.stubEnv('VITE_USE_LOCAL_SECURED_CONTEXT', 'true');
         useHomeNavActions({
-          setActions,
+          setNavActions: setActions,
           onJoinClick: noop,
           onCreateClick: noop,
-          showOfflineDownload: true,
         });
 
         queueMicrotask(() => {

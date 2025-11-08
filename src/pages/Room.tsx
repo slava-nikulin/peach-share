@@ -1,5 +1,13 @@
 import { useLocation, useNavigate, useParams } from '@solidjs/router';
-import { type Accessor, createSignal, type JSX, onCleanup, onMount, Show } from 'solid-js';
+import {
+  type Accessor,
+  createSignal,
+  type JSX,
+  onCleanup,
+  onMount,
+  type Setter,
+  Show,
+} from 'solid-js';
 import { useFirebaseCore } from '../components/FirebaseCoreProvider';
 import type { RtcEndpoint } from '../lib/webrtc';
 import { ErrorState } from './room/components/ErrorState';
@@ -8,6 +16,8 @@ import { RoomFiles } from './room/components/RoomFiles';
 import { RtdbConnector } from './room/lib/RtdbConnector';
 import { startRoomFlow } from './room/room-init';
 import type { Intent, RoomVM } from './room/types';
+
+type RoomLocationState = { secret?: string; intent?: Intent } | undefined;
 
 export function Room(): JSX.Element {
   const params = useParams<{ id: string }>();
@@ -28,19 +38,44 @@ export function Room(): JSX.Element {
   };
 
   const goHome = (): void => navigate('/');
-  onMount(async () => {
+
+  useRoomLifecycle(params.id, location.state ?? undefined, setError, setVmRef, setEndpoint);
+
+  return (
+    <RoomLayout
+      error={error}
+      vmRef={vmRef}
+      endpoint={endpoint}
+      onDisconnect={handleDisconnect}
+      onHome={goHome}
+    />
+  );
+}
+
+function useRoomLifecycle(
+  roomId: string,
+  state: RoomLocationState,
+  setError: Setter<string | null>,
+  setVmRef: Setter<RoomVM | undefined>,
+  setEndpoint: Setter<RtcEndpoint | undefined>,
+): void {
+  onMount(() => {
     const { app, auth } = useFirebaseCore();
     const rtdb = new RtdbConnector({
       app,
     });
     const authId = auth.currentUser?.uid;
+    if (!authId) {
+      setError('Authentication is not ready. Please refresh the page.');
+      return;
+    }
     const { actor, vm, stop } = startRoomFlow(
       {
-        roomId: params.id,
-        intent: location.state?.intent ?? 'join',
-        secret: location.state?.secret ?? '',
+        roomId,
+        intent: state?.intent ?? 'join',
+        secret: state?.secret ?? '',
         rtdb,
-        authId: authId!,
+        authId,
       },
       setError,
     );
@@ -59,16 +94,6 @@ export function Room(): JSX.Element {
       stop();
     });
   });
-
-  return (
-    <RoomLayout
-      error={error}
-      vmRef={vmRef}
-      endpoint={endpoint}
-      onDisconnect={handleDisconnect}
-      onHome={goHome}
-    />
-  );
 }
 
 interface RoomLayoutProps {
