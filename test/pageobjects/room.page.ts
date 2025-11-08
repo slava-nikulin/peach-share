@@ -103,10 +103,6 @@ class RoomPage extends Page {
     );
   }
 
-  private get authValueBadge(): ChainablePromiseElement {
-    return this.browser.$("//div[normalize-space()='Auth']/following-sibling::div[1]//span");
-  }
-
   private get sasValueLabel(): ChainablePromiseElement {
     return this.browser.$(
       "//div[normalize-space()='SAS']/following-sibling::div[1]//div[contains(@class,'font-mono')]",
@@ -210,20 +206,10 @@ class RoomPage extends Page {
     await this.secretInput.waitForDisplayed({ timeout });
     await this.pakeEstablishedBadge.waitForDisplayed({ timeout });
     await this.webrtcConnectedBadge.waitForDisplayed({ timeout });
-
-    await this.browser.waitUntil(
-      async () => ((await this.authValueBadge.getText()) ?? '').trim().length > 0,
-      { timeout, interval: 200, timeoutMsg: 'Auth value did not appear' },
-    );
-
     await this.browser.waitUntil(
       async () => ((await this.sasValueLabel.getText()) ?? '').trim().length > 0,
       { timeout, interval: 200, timeoutMsg: 'SAS value did not appear' },
     );
-  }
-
-  public async getAuthValue(): Promise<string> {
-    return (await this.authValueBadge.getText())?.trim() ?? '';
   }
 
   public async getSasValue(): Promise<string> {

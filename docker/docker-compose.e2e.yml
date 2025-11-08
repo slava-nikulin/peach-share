@@ -7,9 +7,8 @@ services:
     environment:
       VITE_EMULATOR_RTD_HOST: rtdb-emulator
       VITE_EMULATOR_AUTH_HOST: rtdb-emulator
-      HEADLESS: "1"
+      HEADLESS: '1'
       APP_URL: http://web:5173/
-      # при необходимости: NODE_OPTIONS: "--max_old_space_size=4096"
     depends_on:
       rtdb-emulator:
         condition: service_healthy
@@ -18,9 +17,6 @@ services:
       stun:
         condition: service_started
     profiles: ['e2e']
-    # Если нужны артефакты отчётов:
-    # volumes:
-    #   - ./reports:/app/reports
 
   web:
     environment:

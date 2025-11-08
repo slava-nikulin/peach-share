@@ -317,9 +317,25 @@ export class FileTransfer {
     channel.binaryType = 'arraybuffer';
     channel.bufferedAmountLowThreshold = this.opts.lowWaterMark;
 
-    const handleMessage = (event: MessageEvent<ArrayBuffer>): void => {
-      if (!(event.data instanceof ArrayBuffer)) return;
-      this.handleChunk(event.data);
+    const handleMessage = (event: MessageEvent<unknown>): void => {
+      const data = event.data;
+      if (data instanceof ArrayBuffer) {
+        this.handleChunk(data);
+        return;
+      }
+      if (ArrayBuffer.isView(data)) {
+        const view = data as ArrayBufferView;
+        const copy = new Uint8Array(view.byteLength);
+        copy.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+        this.handleChunk(copy.buffer);
+        return;
+      }
+      if (typeof Blob !== 'undefined' && data instanceof Blob) {
+        void data
+          .arrayBuffer()
+          .then((buf) => this.handleChunk(buf))
+          .catch(() => {});
+      }
     };
     const handleError = (event: Event | RTCErrorEvent): void => {
       reject(event);

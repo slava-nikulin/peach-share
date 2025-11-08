@@ -9,6 +9,12 @@ services:
       - '9000:9000'
       - '9099:9099'
   web:
+    environment:
+      VITE_FIREBASE_APP_ID: demo-peach-share
+      VITE_FIREBASE_PROJECT_ID: demo-peach-share
+      VITE_EMULATOR_RTD_NS: demo-peach-share-default-rtdb
+      VITE_FIREBASE_API_KEY: dev-key
+      VITE_EMULATOR_RTDB_PORT: '9000'
+      VITE_EMULATOR_AUTH_PORT: '9099'
     ports:
       - '5173:5173'
-    profiles: ['emu']

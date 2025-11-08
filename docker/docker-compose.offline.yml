@@ -1,0 +1,111 @@
+x-images:
+  rtdb: &img_rtdb ${REGISTRY:-ghcr.io}/${OWNER:-slava-nikulin}/${REPO:-peach-share}/rtdb-emulator-offline:${TAG:-emu}
+  web: &img_web ${REGISTRY:-ghcr.io}/${OWNER:-slava-nikulin}/${REPO:-peach-share}/web-offline:${TAG:-emu}
+  proxy: &img_proxy ${REGISTRY:-ghcr.io}/${OWNER:-slava-nikulin}/${REPO:-peach-share}/proxy:${TAG:-emu}
+
+services:
+  stun:
+    image: instrumentisto/coturn:latest
+    pull_policy: missing
+    command: >
+      turnserver --stun-only
+      --listening-port=3478
+      --listening-ip=0.0.0.0
+      --no-tls --no-dtls --fingerprint
+    ports:
+      - '3478:3478/udp'
+      - '3478:3478/tcp'
+
+  rtdb-emulator:
+    image: *img_rtdb
+    pull_policy: missing
+    environment:
+      PROJECT_ID: demo-peach-share
+      FIREBASE_EMULATORS_PATH: /opt/firebase
+    ports:
+      - '4000:4000'
+      - '9000:9000'
+      - '9099:9099'
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.rtdb-emulator.rule=PathPrefix(`/`)'
+      - 'traefik.http.routers.rtdb-emulator.entrypoints=rtdb-emulator'
+      - 'traefik.http.routers.rtdb-emulator.tls=true'
+      - 'traefik.http.routers.rtdb-emulator.service=rtdb-emulator'
+      - 'traefik.http.services.rtdb-emulator.loadbalancer.server.port=9000'
+      - 'traefik.http.services.rtdb-emulator.loadbalancer.server.scheme=http'
+      - 'traefik.http.routers.rtdb-emulator.middlewares=websocket-middleware@docker'
+
+      - 'traefik.http.routers.auth-emulator.rule=PathPrefix(`/`)'
+      - 'traefik.http.routers.auth-emulator.entrypoints=auth-emulator'
+      - 'traefik.http.routers.auth-emulator.tls=true'
+      - 'traefik.http.services.auth-emulator.loadbalancer.server.port=9099'
+      - 'traefik.http.services.auth-emulator.loadbalancer.server.scheme=http'
+      - 'traefik.http.routers.auth-emulator.service=auth-emulator'
+      - 'traefik.http.routers.auth-emulator.middlewares=websocket-middleware@docker'
+
+      - 'traefik.http.middlewares.websocket-middleware.headers.customrequestheaders.Connection=upgrade'
+      - 'traefik.http.middlewares.websocket-middleware.headers.customrequestheaders.Upgrade=websocket'
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'curl -fsS http://localhost:9000/health || curl -fsS http://localhost:9000/.json || nc -z 127.0.0.1 9000',
+        ]
+      interval: 5s
+      timeout: 2s
+      retries: 20
+      start_period: 10s
+
+  web:
+    image: *img_web
+    pull_policy: missing
+    environment:
+      HOST_LAN_IP: '${HOST_LAN_IP}'
+    depends_on:
+      rtdb-emulator:
+        condition: service_healthy
+      stun:
+        condition: service_started
+    ports:
+      - '8080:5173' # прямой HTTP доступ в обход traefik
+    volumes:
+      - certs-public:/usr/share/nginx/html/ca:ro
+    labels:
+      - 'traefik.enable=true'
+
+      # HTTPS :443
+      - 'traefik.http.routers.web-https.rule=PathPrefix(`/`)'
+      - 'traefik.http.routers.web-https.entrypoints=websecure'
+      - 'traefik.http.routers.web-https.tls=true'
+      - 'traefik.http.services.web.loadbalancer.server.port=5173'
+
+      # HTTPS :8443
+      - 'traefik.http.routers.web-https-alt.rule=PathPrefix(`/`)'
+      - 'traefik.http.routers.web-https-alt.entrypoints=websecure_alt'
+      - 'traefik.http.routers.web-https-alt.tls=true'
+      - 'traefik.http.services.web.loadbalancer.server.port=5173'
+
+  proxy:
+    image: *img_proxy
+    pull_policy: missing
+    depends_on:
+      - web
+    environment:
+      HOST_LAN_IP: '${HOST_LAN_IP}'
+      LEAF_ROTATE_DAYS_BEFORE_EXPIRY: '1'
+      RTDB_HOST_PORT: '9443'
+      AUTH_HOST_PORT: '9444'
+    ports:
+      - '443:443'
+      - '8443:8443'
+      - '9443:9443' # rtdb
+      - '9444:9444' # auth
+    volumes:
+      - certs-full:/certs
+      - certs-public:/certs-public
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+volumes:
+  certs-full:
+  certs-public:

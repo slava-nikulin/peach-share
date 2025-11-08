@@ -11,7 +11,7 @@ import {
   toBase64Url,
   utf8,
 } from '../../../lib/crypto';
-import { db } from '../config/firebase';
+import type { RtdbConnector } from '../lib/RtdbConnector';
 import type { Role } from '../types';
 
 interface SessionContext {
@@ -53,10 +53,7 @@ interface StartDhInput {
   timeoutMs?: number;
   sasDigits?: number;
   context?: string;
-}
-
-interface StartDhDeps {
-  db?: Database;
+  rtdb: RtdbConnector;
 }
 
 interface StartDhResult {
@@ -73,9 +70,10 @@ class DiffieHellmanHandshake {
   private _derivedKeys?: DerivedKeys;
   private _sas?: string;
 
-  constructor(input: StartDhInput, deps: StartDhDeps) {
+  constructor(input: StartDhInput) {
     this.input = input;
-    this.database = deps.db ?? db;
+    this.database = input.rtdb.connect();
+    input.rtdb.ensureOnline();
   }
 
   public async execute(): Promise<StartDhResult> {
@@ -387,7 +385,7 @@ class DiffieHellmanHandshake {
   }
 }
 
-export async function startDH(input: StartDhInput, deps: StartDhDeps = {}): Promise<StartDhResult> {
-  const handshake = new DiffieHellmanHandshake(input, deps);
+export async function startDH(input: StartDhInput): Promise<StartDhResult> {
+  const handshake = new DiffieHellmanHandshake(input);
   return handshake.execute();
 }

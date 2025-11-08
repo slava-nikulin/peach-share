@@ -9,6 +9,7 @@ import {
   createTestFirebaseUser,
   type TestFirebaseUserCtx,
 } from '../../../../tests/utils/firebase-user';
+import { cleanUp } from '../../fsm-actors/cleanup';
 import { createRoom } from '../../fsm-actors/create-room';
 import { joinRoom } from '../../fsm-actors/join-room';
 
@@ -43,7 +44,7 @@ describe('WebRTCConnection integration', () => {
       stunHost: emu.stunHost ?? emu.host,
     });
     vi.resetModules();
-    await import('../../config/firebase');
+    await import('../../../../tests/setup/firebase');
   }, 180_000);
 
   afterAll(async () => {
@@ -57,7 +58,17 @@ describe('WebRTCConnection integration', () => {
     if (roomsToCleanup.length > 0) {
       const entries = roomsToCleanup.splice(0);
       await Promise.all(
-        entries.map(({ roomId, ctx }) => remove(ref(ctx.db, `rooms/${roomId}`)).catch(() => {})),
+        entries.map(async ({ roomId, ctx }) => {
+          try {
+            ctx.rtdb.connect();
+            ctx.rtdb.ensureOnline();
+            await remove(ref(ctx.db, `rooms/${roomId}`));
+          } catch {
+            // ignore cleanup issues
+          } finally {
+            ctx.rtdb.cleanup();
+          }
+        }),
       );
     }
     if (activeUsers.length > 0) {
@@ -77,8 +88,8 @@ describe('WebRTCConnection integration', () => {
     const encKey = new Uint8Array(32).fill(7);
     const iceServers = stunFromEnv(); // для реализма; можно оставить []
 
-    await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
-    await joinRoom({ roomId, authId: guestCtx.uid }, { db: guestCtx.db });
+    await createRoom({ roomId, authId: ownerCtx.uid, rtdb: ownerCtx.rtdb });
+    await joinRoom({ roomId, authId: guestCtx.uid, rtdb: guestCtx.rtdb });
 
     const ownerP = WebRTCConnection.create({
       dbRoomRef: ownerRoomRef,
@@ -148,6 +159,21 @@ describe('WebRTCConnection integration', () => {
 
     owner.close();
     guest.close();
+
+    const ownerCleanupSpy = vi.spyOn(ownerCtx.rtdb, 'cleanup');
+    const guestCleanupSpy = vi.spyOn(guestCtx.rtdb, 'cleanup');
+
+    await cleanUp(ownerCtx.rtdb, roomId);
+    await cleanUp(guestCtx.rtdb, roomId);
+
+    expect(ownerCleanupSpy).toHaveBeenCalledTimes(1);
+    expect(guestCleanupSpy).toHaveBeenCalledTimes(1);
+
+    ownerCtx.rtdb.connect();
+    ownerCtx.rtdb.ensureOnline();
+    const roomSnap = await get(ownerRoomRef);
+    ownerCtx.rtdb.cleanup();
+    expect(roomSnap.exists()).toBe(false);
   }, 180_000);
 
   it('очередь ICE-кандидатов до setRemoteDescription: соединение устанавливается', async () => {
@@ -162,8 +188,8 @@ describe('WebRTCConnection integration', () => {
     const aes = await importAesGcmKey(encKey);
     const ownerPaths = sigPaths({ roomRef: ownerRoomRef, role: 'owner' });
 
-    await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
-    await joinRoom({ roomId, authId: guestCtx.uid }, { db: guestCtx.db });
+    await createRoom({ roomId, authId: ownerCtx.uid, rtdb: ownerCtx.rtdb });
+    await joinRoom({ roomId, authId: guestCtx.uid, rtdb: guestCtx.rtdb });
 
     // стартуем guest раньше, чтобы подписался на кандидатов и оффер
     const guestP = WebRTCConnection.create({
@@ -209,8 +235,8 @@ describe('WebRTCConnection integration', () => {
     const encOwner = new Uint8Array(32).fill(1);
     const encGuest = new Uint8Array(32).fill(2); // другой ключ
 
-    await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
-    await joinRoom({ roomId, authId: guestCtx.uid }, { db: guestCtx.db });
+    await createRoom({ roomId, authId: ownerCtx.uid, rtdb: ownerCtx.rtdb });
+    await joinRoom({ roomId, authId: guestCtx.uid, rtdb: guestCtx.rtdb });
 
     const ownerP = WebRTCConnection.create({
       dbRoomRef: ownerRoomRef,

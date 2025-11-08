@@ -34,7 +34,7 @@ describe('joinRoom RTDB integration', () => {
       stunPort: emu.ports.stun,
     });
 
-    await import('../../config/firebase');
+    await import('../../../../tests/setup/firebase');
   }, 240_000);
 
   afterEach(async () => {
@@ -56,8 +56,8 @@ describe('joinRoom RTDB integration', () => {
     const guestCtx = await createTestFirebaseUser('guest');
     activeContexts.push(ownerCtx, guestCtx);
 
-    await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
-    await joinRoom({ roomId, authId: guestCtx.uid }, { db: guestCtx.db });
+    await createRoom({ roomId, authId: ownerCtx.uid, rtdb: ownerCtx.rtdb });
+    await joinRoom({ roomId, authId: guestCtx.uid, rtdb: guestCtx.rtdb });
 
     const r = await read(ownerCtx.db, roomId);
     expect(r).not.toBeNull();
@@ -73,9 +73,9 @@ describe('joinRoom RTDB integration', () => {
     const guestCtx = await createTestFirebaseUser('guest');
     activeContexts.push(ownerCtx, guestCtx);
 
-    await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
-    await joinRoom({ roomId, authId: guestCtx.uid }, { db: guestCtx.db });
-    await joinRoom({ roomId, authId: guestCtx.uid }, { db: guestCtx.db }); // не должен бросать
+    await createRoom({ roomId, authId: ownerCtx.uid, rtdb: ownerCtx.rtdb });
+    await joinRoom({ roomId, authId: guestCtx.uid, rtdb: guestCtx.rtdb });
+    await joinRoom({ roomId, authId: guestCtx.uid, rtdb: guestCtx.rtdb }); // не должен бросать
 
     const r = await read(ownerCtx.db, roomId);
     expect(r?.guest).toBe(guestCtx.uid);
@@ -88,11 +88,11 @@ describe('joinRoom RTDB integration', () => {
     const guest2Ctx = await createTestFirebaseUser('g2');
     activeContexts.push(ownerCtx, guest1Ctx, guest2Ctx);
 
-    await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
-    await joinRoom({ roomId, authId: guest1Ctx.uid }, { db: guest1Ctx.db });
+    await createRoom({ roomId, authId: ownerCtx.uid, rtdb: ownerCtx.rtdb });
+    await joinRoom({ roomId, authId: guest1Ctx.uid, rtdb: guest1Ctx.rtdb });
 
     await expect(
-      joinRoom({ roomId, authId: guest2Ctx.uid }, { db: guest2Ctx.db }),
+      joinRoom({ roomId, authId: guest2Ctx.uid, rtdb: guest2Ctx.rtdb }),
     ).rejects.toThrowError('room_full');
   }, 60_000);
 
@@ -102,7 +102,7 @@ describe('joinRoom RTDB integration', () => {
     activeContexts.push(guestCtx);
 
     await expect(
-      joinRoom({ roomId, authId: guestCtx.uid, timeoutMs: 300 }, { db: guestCtx.db }),
+      joinRoom({ roomId, authId: guestCtx.uid, timeoutMs: 300, rtdb: guestCtx.rtdb }),
     ).rejects.toThrowError('room_not_found');
   }, 60_000);
 
@@ -111,12 +111,17 @@ describe('joinRoom RTDB integration', () => {
     const guestCtx = await createTestFirebaseUser('guest');
     activeContexts.push(guestCtx);
 
-    const pJoin = joinRoom({ roomId, authId: guestCtx.uid, timeoutMs: 5_000 }, { db: guestCtx.db });
+    const pJoin = joinRoom({
+      roomId,
+      authId: guestCtx.uid,
+      timeoutMs: 5_000,
+      rtdb: guestCtx.rtdb,
+    });
 
     await new Promise((r) => setTimeout(r, 150)); // имитируем задержку создания
     const ownerCtx = await createTestFirebaseUser('owner');
     activeContexts.push(ownerCtx);
-    await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
+    await createRoom({ roomId, authId: ownerCtx.uid, rtdb: ownerCtx.rtdb });
 
     await pJoin; // не должен упасть
     const r = await read(ownerCtx.db, roomId);
@@ -130,8 +135,8 @@ describe('joinRoom RTDB integration', () => {
     const guestCtx = await createTestFirebaseUser('guest');
     activeContexts.push(ownerCtx, guestCtx);
 
-    await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
-    const joined = await joinRoom({ roomId, authId: guestCtx.uid }, { db: guestCtx.db });
+    await createRoom({ roomId, authId: ownerCtx.uid, rtdb: ownerCtx.rtdb });
+    const joined = await joinRoom({ roomId, authId: guestCtx.uid, rtdb: guestCtx.rtdb });
     expect(joined.room_id).toBe(roomId);
     expect(joined.owner).toBe(ownerCtx.uid);
     expect(joined.guest).toBe(guestCtx.uid);

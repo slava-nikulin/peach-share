@@ -3,7 +3,7 @@ import type { ParentComponent } from 'solid-js';
 import { useNavActions } from './nav-actions';
 
 export const RootLayout: ParentComponent<RouteSectionProps> = (props: RouteSectionProps) => {
-  const { navActions: actions } = useNavActions();
+  const { navActions } = useNavActions();
 
   return (
     <div class="min-h-screen bg-gradient-to-br from-rose-50 via-orange-50 to-amber-50 text-slate-800">
@@ -14,7 +14,7 @@ export const RootLayout: ParentComponent<RouteSectionProps> = (props: RouteSecti
             <span class="font-semibold text-2xl tracking-tight">Peach Share</span>
           </A>
           <div class="flex items-center gap-2">
-            {actions() /* сюда страница «вкладывает» кнопки */}
+            {navActions() /* сюда страница «вкладывает» кнопки */}
           </div>
         </nav>
       </header>

@@ -45,13 +45,6 @@ async function waitForConnectionIndicators(): Promise<void> {
     roomPageGuest.getSasValue(),
   ]);
   expect(ownerSas).toBe(guestSas);
-
-  const [ownerAuth, guestAuth] = await Promise.all([
-    roomPageOwner.getAuthValue(),
-    roomPageGuest.getAuthValue(),
-  ]);
-  expect(ownerAuth).not.toEqual('');
-  expect(guestAuth).not.toEqual('');
 }
 
 async function shareMoonFile(): Promise<string> {

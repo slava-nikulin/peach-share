@@ -1,8 +1,7 @@
-FROM selenium/standalone-chrome:140.0-20251020
+FROM selenium/standalone-chrome:latest
 
 USER root
 
-# NodeJS и инструменты сборки для зависимостей с native-биндингами
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
@@ -12,20 +11,14 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Копируем только манифесты и конфиг тестов для более быстрого кеширования
 COPY package.json package-lock.json* ./
 COPY wdio.conf.ts ./wdio.conf.ts
 COPY test ./test
-# если есть тестовые фикстуры/tsconfig – добавь их:
-# COPY test/tsconfig.json ./test/tsconfig.json
 
 RUN chown -R seluser:seluser /app
 
 USER seluser
 
-# Устанавливаем зависимости (devDeps для wdio/ts)
 RUN npm install --no-audit --no-fund
 
-# По умолчанию шлём тесты в headless
-# ENV HEADLESS=1
 CMD ["npx","wdio","run","./wdio.conf.ts"]

@@ -12,17 +12,17 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write --unsafe",
     "typecheck": "tsc -b",
-    "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:int": "vitest run --project integration",
     "test:e2e:vitest": "vitest run --project e2e-vitest",
     "test:e2e:wdio": "wdio run ./wdio.conf.ts",
     "test:e2e:wdio:headless": "HEADLESS=1 wdio run ./wdio.conf.ts",
-    "test:e2e:wdio:docker": "docker compose -p peachshare-e2e -f docker/docker-compose.base.yml -f docker/docker-compose.e2e.yml --profile e2e up --build --abort-on-container-exit --exit-code-from e2e-tests",
-    "ci:local": "act --pull=false -P ubuntu-latest=catthehacker/ubuntu:act-22.04 -e .github/workflows/act.event.json pull_request",
-    "check": "./.husky/pre-push"
+    "test:e2e:wdio:docker": "./docker/scripts/run-e2e.sh",
+    "ci:local": "act --pull=false --workflows .github/workflows/ci.yml -P ubuntu-latest=catthehacker/ubuntu:act-22.04 -e .github/workflows/act.event.json pull_request",
+    "preflight": "./.husky/pre-push"
   },
   "dependencies": {
+    "@noble/hashes": "^2.0.1",
     "@solidjs/router": "^0.15.3",
     "firebase": "^12.3.0",
     "flowbite": "^3.1.2",

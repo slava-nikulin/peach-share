@@ -1,11 +1,14 @@
+// pages/Home.tsx
 import { useNavigate } from '@solidjs/router';
-import { type Component, onCleanup, onMount } from 'solid-js';
+import type { Component } from 'solid-js';
 import { useNavActions } from '../components/nav-actions';
-import { RoomModal, type RoomModalHandle } from '../components/RoomModal';
-import { fromBase64Url, genSecret32, hkdfPathId, toBase64Url } from '../lib/crypto';
+import { RoomModal } from '../components/RoomModal';
+import { genSecret32, hkdfPathId, toBase64Url } from '../lib/crypto';
+import { useHomeNavActions } from './home/components/nav';
+import { createJoinHandlers } from './home/join';
 
 export const Home: Component = () => {
-  const { setNavActions: setActions } = useNavActions();
+  const { setNavActions } = useNavActions();
   const navigate = useNavigate();
 
   const createRoom = async (): Promise<void> => {
@@ -16,47 +19,17 @@ export const Home: Component = () => {
       state: { secret: secretB64, intent: 'create' },
     });
   };
-  onMount(() => {
-    setActions(
-      <>
-        <button
-          type="button"
-          onClick={handleJoinButtonClick}
-          class="rounded-lg border border-slate-900/50 bg-white px-2 py-1.5 text-lg hover:cursor-pointer hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-900/10"
-        >
-          Join room
-        </button>
 
-        <button
-          type="button"
-          onClick={createRoom}
-          class="rounded-lg bg-gradient-to-r from-pink-400 via-pink-500 to-pink-600 px-2 py-1.5 text-lg text-white shadow-sm hover:cursor-pointer hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-slate-900/20"
-        >
-          Start sharing
-        </button>
-      </>,
-    );
+  const { handleJoinRoomForm, handleJoinButtonClick, handleModalReady } =
+    createJoinHandlers(navigate);
+
+  useHomeNavActions({
+    setNavActions,
+    onJoinClick: async () => {
+      void handleJoinButtonClick();
+    },
+    onCreateClick: createRoom,
   });
-  onCleanup(() => setActions(null));
-
-  let joinRoomModal: RoomModalHandle | undefined;
-
-  const handleJoinRoomForm = async (secretB64: string): Promise<void> => {
-    const secret = fromBase64Url(secretB64);
-    const pathId = await hkdfPathId(secret, 'path', 128);
-
-    navigate(`/room/${pathId}`, {
-      state: { secret: secretB64, intent: 'join' },
-    });
-  };
-
-  const handleJoinButtonClick = (): void => {
-    joinRoomModal?.show();
-  };
-
-  const handleModalReady = (api: RoomModalHandle): void => {
-    joinRoomModal = api;
-  };
 
   return (
     <div class="grid grid-cols-1">
@@ -64,10 +37,9 @@ export const Home: Component = () => {
         <div class="mb-8 rounded-2xl border border-white/70 bg-white/60 p-5 shadow-sm">
           <h2 class="mb-2 font-semibold text-xl">Instructions</h2>
           <ol class="max-w-md list-inside list-decimal space-y-1 text-gray-500 text-md dark:text-slate-700">
-            <li>Connect devices to the same Wi-Fi network.</li>
             <li>Create a room on one device.</li>
             <li>Connect from another device using the secret code.</li>
-            <li>Do P2P file sharing</li>
+            <li>Share files</li>
             <li>Close tab when you done</li>
           </ol>
         </div>

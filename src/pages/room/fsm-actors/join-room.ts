@@ -1,6 +1,5 @@
 // src/pages/room/fsm-actors/join-room.ts
 import {
-  type Database,
   type DatabaseReference,
   get,
   onValue,
@@ -8,7 +7,8 @@ import {
   runTransaction,
   serverTimestamp,
 } from 'firebase/database';
-import { db } from '../config/firebase';
+
+import type { RtdbConnector } from '../lib/RtdbConnector';
 import type { RoomRecord } from '../types';
 
 async function waitForRoomExists(roomRef: DatabaseReference, timeoutMs: number): Promise<void> {
@@ -37,20 +37,15 @@ async function waitForRoomExists(roomRef: DatabaseReference, timeoutMs: number):
   });
 }
 
-interface JoinRoomDeps {
-  db?: Database;
-}
-
-export async function joinRoom(
-  input: {
-    roomId: string;
-    authId: string;
-    timeoutMs?: number;
-  },
-  deps: JoinRoomDeps = {},
-): Promise<RoomRecord> {
+export async function joinRoom(input: {
+  roomId: string;
+  authId: string;
+  rtdb: RtdbConnector;
+  timeoutMs?: number;
+}): Promise<RoomRecord> {
   const { roomId, authId, timeoutMs = 15_000 } = input;
-  const database = deps.db ?? db;
+  const database = input.rtdb.connect();
+  input.rtdb.ensureOnline();
   const roomRef = ref(database, `rooms/${roomId}`);
 
   await waitForRoomExists(roomRef, timeoutMs).catch((e) => {

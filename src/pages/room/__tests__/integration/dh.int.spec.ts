@@ -60,7 +60,7 @@ describe('startDH integration', () => {
       stunPort: emu.ports.stun,
     });
 
-    await import('../../config/firebase');
+    await import('../../../../tests/setup/firebase');
     ({ startDH } = await import('../../fsm-actors/dh'));
   }, 240_000);
 
@@ -86,12 +86,12 @@ describe('startDH integration', () => {
     const guestCtx = await createTestFirebaseUser('guest');
     activeUsers.push(ownerCtx, guestCtx);
 
-    await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
-    await joinRoom({ roomId, authId: guestCtx.uid }, { db: guestCtx.db });
+    await createRoom({ roomId, authId: ownerCtx.uid, rtdb: ownerCtx.rtdb });
+    await joinRoom({ roomId, authId: guestCtx.uid, rtdb: guestCtx.rtdb });
 
     const [owner, guest] = await Promise.all([
-      startDH({ roomId, role: 'owner', sharedS, timeoutMs: 10_000 }, { db: ownerCtx.db }),
-      startDH({ roomId, role: 'guest', sharedS, timeoutMs: 10_000 }, { db: guestCtx.db }),
+      startDH({ roomId, role: 'owner', sharedS, timeoutMs: 10_000, rtdb: ownerCtx.rtdb }),
+      startDH({ roomId, role: 'guest', sharedS, timeoutMs: 10_000, rtdb: guestCtx.rtdb }),
     ]);
 
     // ключи одинаковы
@@ -125,12 +125,12 @@ describe('startDH integration', () => {
     const guestCtx = await createTestFirebaseUser('guest');
     activeUsers.push(ownerCtx, guestCtx);
 
-    await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
-    await joinRoom({ roomId, authId: guestCtx.uid }, { db: guestCtx.db });
+    await createRoom({ roomId, authId: ownerCtx.uid, rtdb: ownerCtx.rtdb });
+    await joinRoom({ roomId, authId: guestCtx.uid, rtdb: guestCtx.rtdb });
 
     const res = await Promise.allSettled([
-      startDH({ roomId, role: 'owner', sharedS: sA, timeoutMs: 8_000 }, { db: ownerCtx.db }),
-      startDH({ roomId, role: 'guest', sharedS: sB, timeoutMs: 8_000 }, { db: guestCtx.db }),
+      startDH({ roomId, role: 'owner', sharedS: sA, timeoutMs: 8_000, rtdb: ownerCtx.rtdb }),
+      startDH({ roomId, role: 'guest', sharedS: sB, timeoutMs: 8_000, rtdb: guestCtx.rtdb }),
     ]);
 
     // хотя бы один упал с mac_mismatch
@@ -153,9 +153,9 @@ describe('startDH integration', () => {
     const sharedS = toBase64Url(new Uint8Array(32).fill(4));
     const ownerCtx = await createTestFirebaseUser('owner');
     activeUsers.push(ownerCtx);
-    await createRoom({ roomId, authId: ownerCtx.uid }, { db: ownerCtx.db });
+    await createRoom({ roomId, authId: ownerCtx.uid, rtdb: ownerCtx.rtdb });
     await expect(
-      startDH({ roomId, role: 'owner', sharedS, timeoutMs: 2_000 }, { db: ownerCtx.db }),
+      startDH({ roomId, role: 'owner', sharedS, timeoutMs: 2_000, rtdb: ownerCtx.rtdb }),
     ).rejects.toThrow(PEER_TIMEOUT_REGEX);
     await remove(ref(ownerCtx.db, `rooms/${roomId}`));
   }, 20_000);
