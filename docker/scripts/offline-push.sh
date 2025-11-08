@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 set -euo pipefail
 
 DEFAULT_REPO="${GITHUB_REPOSITORY:-slava-nikulin/peach-share}"
