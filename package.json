@@ -12,7 +12,6 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write --unsafe",
     "typecheck": "tsc -b",
-    "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:int": "vitest run --project integration",
     "test:e2e:vitest": "vitest run --project e2e-vitest",
