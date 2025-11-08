@@ -19,7 +19,7 @@ export async function createTestFirebaseUser(label: string = 'test'): Promise<Te
 
   const projectId = process.env.VITE_FIREBASE_PROJECT_ID ?? 'demo-peach-share';
   const dbHost = process.env.VITE_EMULATOR_RTD_HOST ?? '127.0.0.1';
-  const dbPort = Number(process.env.VITE_EMULATOR_RTD_PORT ?? 9000);
+  const dbPort = Number(process.env.VITE_EMULATOR_RTDB_PORT ?? 9000);
   const authHost = process.env.VITE_EMULATOR_AUTH_HOST ?? dbHost;
   const authPort = Number(process.env.VITE_EMULATOR_AUTH_PORT ?? 9099);
   const namespace = process.env.VITE_EMULATOR_RTD_NS ?? `${projectId}-default-rtdb`;

@@ -34,7 +34,7 @@ describe('joinRoom RTDB integration', () => {
       stunPort: emu.ports.stun,
     });
 
-    await import('../../config/firebase');
+    await import('../../lib/firebase');
   }, 240_000);
 
   afterEach(async () => {

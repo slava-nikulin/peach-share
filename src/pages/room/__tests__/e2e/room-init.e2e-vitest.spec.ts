@@ -89,7 +89,7 @@ describe('room init e2e (concurrent)', () => {
     vi.resetModules();
 
     goOfflineMock.mockClear();
-    const { firebaseEnv } = await import('../../config/firebase');
+    const { firebaseEnv } = await import('../../lib/firebase');
     db = firebaseEnv.db;
     ({ startRoomFlow } = await import('../../room-init'));
   }, 240_000);

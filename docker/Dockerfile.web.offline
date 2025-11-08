@@ -16,7 +16,7 @@ COPY --from=deps /pnpm-store /pnpm-store
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --offline --frozen-lockfile
 COPY . .
-RUN pnpm exec vite build --mode emu \
+RUN pnpm exec vite build --mode offline \
  && pnpm store prune \
  && rm -rf node_modules
 

@@ -3,6 +3,8 @@ set -Eeuo pipefail
 
 PROJECT="peachshare-offline"
 COMPOSE_FILE="docker/docker-compose.offline.yml"
+COMPOSE_UP_FLAGS="${COMPOSE_UP_FLAGS:---force-recreate --remove-orphans}"
+COMPOSE_PULL_MODE="${COMPOSE_PULL_MODE:-}"
 
 get_host_ip() {
   # пытаемся вытащить приватный IPv4 с Wi-Fi интерфейса (wl*)
@@ -52,7 +54,17 @@ main() {
     exit 1
   fi
 
-  HOST_LAN_IP="$HOST_IP" docker compose -p "$PROJECT" -f "$COMPOSE_FILE" up
+  set -- up
+
+  if [ -n "$COMPOSE_PULL_MODE" ]; then
+    set -- "$@" --pull "$COMPOSE_PULL_MODE"
+  fi
+
+  for arg in $COMPOSE_UP_FLAGS; do
+    set -- "$@" "$arg"
+  done
+
+  HOST_LAN_IP="$HOST_IP" docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"
 }
 
 main "$@"

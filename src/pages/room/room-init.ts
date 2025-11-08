@@ -1,4 +1,5 @@
 import { createActor, type DoneActorEvent, type ErrorActorEvent } from 'xstate';
+import type { RtdbConnector } from './lib/RtdbConnector';
 import { type RoomInitActor, roomInitFSM } from './room-fsm';
 import { createRoomVM, type Intent, type RoomVM } from './types';
 
@@ -9,7 +10,7 @@ interface StartRoomFlowResult {
 }
 
 export function startRoomFlow(
-  input: { roomId: string; intent: Intent; secret: string },
+  input: { roomId: string; intent: Intent; secret: string; rtdb: RtdbConnector; authId: string },
   setError?: (msg: string | null) => void,
 ): StartRoomFlowResult {
   const vm = createRoomVM();
@@ -18,9 +19,9 @@ export function startRoomFlow(
 
   const machineWithVM = roomInitFSM.provide({
     actions: {
-      vmAuthDone: ({ event }: { event: DoneActorEvent<{ authId: string }> }) => {
-        vm.setAuthId(event.output.authId);
-      },
+      // vmAuthDone: ({ event }: { event: DoneActorEvent<{ authId: string }> }) => {
+      //   vm.setAuthId(event.output.authId);
+      // },
       vmRoomReady: () => vm.setRoomCreated(true),
       vmDHDone: ({ event }: { event: DoneActorEvent<{ encKey: string; sas: string }> }) => {
         vm.setSas(event.output.sas);

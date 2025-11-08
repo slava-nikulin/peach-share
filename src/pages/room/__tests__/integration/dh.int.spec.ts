@@ -60,7 +60,7 @@ describe('startDH integration', () => {
       stunPort: emu.ports.stun,
     });
 
-    await import('../../config/firebase');
+    await import('../../lib/firebase');
     ({ startDH } = await import('../../fsm-actors/dh'));
   }, 240_000);
 

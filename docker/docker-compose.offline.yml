@@ -26,6 +26,26 @@ services:
       - '4000:4000'
       - '9000:9000'
       - '9099:9099'
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.rtdb-emulator.rule=PathPrefix(`/`)'
+      - 'traefik.http.routers.rtdb-emulator.entrypoints=rtdb-emulator'
+      - 'traefik.http.routers.rtdb-emulator.tls=true'
+      - 'traefik.http.routers.rtdb-emulator.service=rtdb-emulator'
+      - 'traefik.http.services.rtdb-emulator.loadbalancer.server.port=9000'
+      - 'traefik.http.services.rtdb-emulator.loadbalancer.server.scheme=http'
+      - 'traefik.http.routers.rtdb-emulator.middlewares=websocket-middleware@docker'
+
+      - 'traefik.http.routers.auth-emulator.rule=PathPrefix(`/`)'
+      - 'traefik.http.routers.auth-emulator.entrypoints=auth-emulator'
+      - 'traefik.http.routers.auth-emulator.tls=true'
+      - 'traefik.http.services.auth-emulator.loadbalancer.server.port=9099'
+      - 'traefik.http.services.auth-emulator.loadbalancer.server.scheme=http'
+      - 'traefik.http.routers.auth-emulator.service=auth-emulator'
+      - 'traefik.http.routers.auth-emulator.middlewares=websocket-middleware@docker'
+
+      - 'traefik.http.middlewares.websocket-middleware.headers.customrequestheaders.Connection=upgrade'
+      - 'traefik.http.middlewares.websocket-middleware.headers.customrequestheaders.Upgrade=websocket'
     healthcheck:
       test:
         [
@@ -42,17 +62,6 @@ services:
     pull_policy: missing
     environment:
       HOST_LAN_IP: '${HOST_LAN_IP}'
-      VITE_USE_EMULATORS: 'true'
-      VITE_OFFLINE_MODE: 'true'
-      VITE_FIREBASE_PROJECT_ID: demo-peach-share
-      VITE_FIREBASE_API_KEY: dev-key
-      VITE_FIREBASE_APP_ID: demo-app
-      VITE_EMULATOR_RTD_HOST: '${HOST_LAN_IP:-rtdb-emulator}'
-      VITE_EMULATOR_RTD_PORT: '9000'
-      VITE_EMULATOR_RTD_NS: demo-peach-share-default-rtdb
-      VITE_EMULATOR_AUTH_HOST: '${HOST_LAN_IP:-rtdb-emulator}'
-      VITE_EMULATOR_AUTH_PORT: '9099'
-      VITE_STUN_URLS: 'stun:${HOST_LAN_IP:-stun}:3478'
     depends_on:
       rtdb-emulator:
         condition: service_healthy
@@ -85,9 +94,13 @@ services:
     environment:
       HOST_LAN_IP: '${HOST_LAN_IP}'
       LEAF_ROTATE_DAYS_BEFORE_EXPIRY: '1'
+      RTDB_HOST_PORT: '9443'
+      AUTH_HOST_PORT: '9444'
     ports:
       - '443:443'
       - '8443:8443'
+      - '9443:9443' # rtdb
+      - '9444:9444' # auth
     volumes:
       - certs-full:/certs
       - certs-public:/certs-public

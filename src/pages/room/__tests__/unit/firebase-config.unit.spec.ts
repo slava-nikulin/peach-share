@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-type ResolveEmulatorHostFn = typeof import('../../config/firebase').__resolveEmulatorHostForTests;
+type ResolveEmulatorHostFn = typeof import('../../lib/firebase').__resolveEmulatorHostForTests;
 
 interface GlobalWithWindow {
   window?: typeof window;
@@ -37,7 +37,7 @@ const loadSubject = async (
       vi.stubEnv(key, value);
     }
   }
-  ({ __resolveEmulatorHostForTests: resolveEmulatorHost } = await import('../../config/firebase'));
+  ({ __resolveEmulatorHostForTests: resolveEmulatorHost } = await import('../../lib/firebase'));
 };
 
 describe('resolveEmulatorHost', () => {
@@ -90,7 +90,7 @@ describe('resolveEmulatorHost', () => {
   it('returns page host when offline bundle is served over LAN', async () => {
     await loadSubject(
       {
-        VITE_OFFLINE_MODE: 'true',
+        VITE_USE_LOCAL_SECURED_CONTEXT: 'true',
         VITE_USE_EMULATORS: 'true',
       },
       '192.168.1.42',
@@ -101,7 +101,7 @@ describe('resolveEmulatorHost', () => {
   it('keeps env host when offline bundle runs on localhost', async () => {
     await loadSubject(
       {
-        VITE_OFFLINE_MODE: 'true',
+        VITE_USE_LOCAL_SECURED_CONTEXT: 'true',
         VITE_USE_EMULATORS: 'true',
       },
       'localhost',

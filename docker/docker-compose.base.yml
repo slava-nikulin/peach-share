@@ -63,7 +63,7 @@ services:
     depends_on:
       - rtdb-emulator
       - stun
-    profiles: ['dev', 'e2e']
+    profiles: ['emu', 'e2e']
 
 volumes:
   node_modules:

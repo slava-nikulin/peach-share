@@ -19,7 +19,7 @@ describe('anonAuth integration', () => {
       stunHost: emu.stunHost ?? emu.host,
       stunPort: emu.ports.stun,
     });
-    const { firebaseEnv } = await import('../../config/firebase');
+    const { firebaseEnv } = await import('../../lib/firebase');
     auth = firebaseEnv.auth;
     const mod = await import('../../fsm-actors/auth');
     authenticator = mod.authenticator;

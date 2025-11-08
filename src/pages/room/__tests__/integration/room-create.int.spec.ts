@@ -39,7 +39,7 @@ describe('createRoom RTDB integration', () => {
     });
 
     ({ createRoom: createRoomFn } = await import('../../fsm-actors/create-room'));
-    await import('../../config/firebase');
+    await import('../../lib/firebase');
   }, 240_000);
 
   afterEach(async () => {

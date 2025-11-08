@@ -44,7 +44,7 @@ describe('WebRTCConnection integration', () => {
       stunHost: emu.stunHost ?? emu.host,
     });
     vi.resetModules();
-    await import('../../config/firebase');
+    await import('../../lib/firebase');
   }, 180_000);
 
   afterAll(async () => {

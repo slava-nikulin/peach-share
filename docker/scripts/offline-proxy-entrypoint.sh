@@ -11,6 +11,10 @@ HOST_IP="${HOST_LAN_IP:?HOST_LAN_IP not set}"
 LEAF_ROTATE_DAYS_BEFORE_EXPIRY="${LEAF_ROTATE_DAYS_BEFORE_EXPIRY:-1}"
 EXPIRY_GRACE_SEC="$(( LEAF_ROTATE_DAYS_BEFORE_EXPIRY * 24 * 3600 ))"
 FORCE_NEW_CA="${FORCE_NEW_CA:-false}"
+HTTP_HOST_PORT="${HTTP_HOST_PORT:-8080}"
+HTTPS_HOST_PORT="${HTTPS_HOST_PORT:-8443}"
+RTDB_HOST_PORT="${RTDB_HOST_PORT:-9443}"
+AUTH_HOST_PORT="${AUTH_HOST_PORT:-9444}"
 
 mkdir -p "$CERT_DIR" "$CAROOT_DIR"
 
@@ -97,11 +101,20 @@ tls:
         keyFile: /certs/server.key
 EOF
 
+echo "Traefik offline proxy is ready."
+echo "  Static HTTP : http://${HOST_IP}:${HTTP_HOST_PORT}"
+echo "  Static HTTPS: https://${HOST_IP}:${HTTPS_HOST_PORT}"
+echo "  RTDB emulator over TLS: https://${HOST_IP}:${RTDB_HOST_PORT}"
+echo "  Auth emulator over TLS: https://${HOST_IP}:${AUTH_HOST_PORT}"
+
 # 5. run Traefik
 exec traefik \
   --entrypoints.websecure.address=:443 \
   --entrypoints.websecure_alt.address=:8443 \
+  --entrypoints.rtdb-emulator.address=":$RTDB_HOST_PORT" \
+  --entrypoints.auth-emulator.address=":$AUTH_HOST_PORT" \
   --providers.file.filename="$TRAEFIK_DYNAMIC" \
   --providers.file.watch=true \
-  --providers.docker=true \
-  --log.level=DEBUG
+  --providers.docker=true 
+  # \
+  # --log.level=DEBUG

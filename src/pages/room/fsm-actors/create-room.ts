@@ -1,20 +1,15 @@
-import { type Database, ref, runTransaction, serverTimestamp } from 'firebase/database';
-import { getRoomFirebaseEnv, type RoomFirebaseEnvironment } from '../config/firebase';
+import { ref, runTransaction, serverTimestamp } from 'firebase/database';
+import type { RtdbConnector } from '../lib/RtdbConnector';
 import type { RoomRecord } from '../types';
 
-interface CreateRoomDeps {
-  db?: Database;
-  env?: RoomFirebaseEnvironment;
-}
-
-export async function createRoom(
-  input: { roomId: string; authId: string },
-  deps: CreateRoomDeps = {},
-): Promise<RoomRecord> {
-  const env = deps.env ?? getRoomFirebaseEnv();
-  if (!deps.db) env.reconnect();
-  const database = deps.db ?? env.db;
-  const roomRef = ref(database, `rooms/${input.roomId}`);
+export async function createRoom(input: {
+  roomId: string;
+  authId: string;
+  rtdb: RtdbConnector;
+}): Promise<RoomRecord> {
+  const db = input.rtdb.connect();
+  input.rtdb.ensureOnline();
+  const roomRef = ref(db, `rooms/${input.roomId}`);
   const now = serverTimestamp();
   const payload: RoomRecord = {
     room_id: input.roomId,
@@ -23,12 +18,14 @@ export async function createRoom(
     updated_at: now,
   };
 
+  console.log(`run tran ${payload.owner}`);
   const res = await runTransaction(
     roomRef,
     (cur: RoomRecord | null) => (cur !== null ? undefined : payload),
     { applyLocally: false },
   );
 
+  console.log(`run tran done`);
   if (!res.committed) throw new Error('room_already_exists');
   return res.snapshot.val() as RoomRecord;
 }

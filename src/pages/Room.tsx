@@ -1,9 +1,11 @@
 import { useLocation, useNavigate, useParams } from '@solidjs/router';
 import { type Accessor, createSignal, type JSX, onCleanup, onMount, Show } from 'solid-js';
+import { useFirebaseCore } from '../components/FirebaseCoreProvider';
 import type { RtcEndpoint } from '../lib/webrtc';
 import { ErrorState } from './room/components/ErrorState';
 import { MetaPanel } from './room/components/MetaPanel';
 import { RoomFiles } from './room/components/RoomFiles';
+import { RtdbConnector } from './room/lib/RtdbConnector';
 import { startRoomFlow } from './room/room-init';
 import type { Intent, RoomVM } from './room/types';
 
@@ -25,12 +27,20 @@ export function Room(): JSX.Element {
     }
   };
 
-  onMount(() => {
+  const goHome = (): void => navigate('/');
+  onMount(async () => {
+    const { app, auth } = useFirebaseCore();
+    const rtdb = new RtdbConnector({
+      app,
+    });
+    const authId = auth.currentUser?.uid;
     const { actor, vm, stop } = startRoomFlow(
       {
         roomId: params.id,
         intent: location.state?.intent ?? 'join',
         secret: location.state?.secret ?? '',
+        rtdb,
+        authId: authId!,
       },
       setError,
     );
@@ -49,8 +59,6 @@ export function Room(): JSX.Element {
       stop();
     });
   });
-
-  const goHome = (): void => navigate('/');
 
   return (
     <RoomLayout
