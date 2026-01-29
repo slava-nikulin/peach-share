@@ -11,7 +11,7 @@ services:
         protocol: udp
       - target: 3478
         protocol: tcp
-    profiles: ['stun', 'emu', 'e2e']
+    profiles: ['emu']
 
   rtdb-emulator:
     build:
@@ -21,6 +21,8 @@ services:
     volumes:
       - ./scripts:/app/scripts:ro
       - ./config/firebase:/app/config:ro
+      - ../functions:/app/functions:ro
+      - ../node_modules:/app/node_modules:ro
       - firebase-emulator-cache:/opt/firebase
       - firebase-emulator-cache-ui:/opt/firebase/.cache
     environment:
@@ -30,15 +32,15 @@ services:
     healthcheck:
       test:
         [
-          'CMD-SHELL',
-          'curl -fsS http://localhost:9000/health || curl -fsS http://localhost:9000/.json || nc -z 127.0.0.1 9000',
+          "CMD-SHELL",
+          "curl -sS \"http://localhost:9000/.json?ns=$${PROJECT_ID}-default-rtdb\" >/dev/null && curl -sS http://localhost:9099/ >/dev/null && curl -sS http://localhost:5001/ >/dev/null"
         ]
       interval: 5s
       timeout: 2s
       retries: 20
       start_period: 10s
     entrypoint: ['/app/scripts/emulator-entrypoint.sh']
-    profiles: ['rtdb', 'emu', 'e2e']
+    profiles: ['integration-test', 'emu']
 
   web:
     build:
@@ -63,7 +65,7 @@ services:
     depends_on:
       - rtdb-emulator
       - stun
-    profiles: ['emu', 'e2e']
+    profiles: ['emu']
 
 volumes:
   node_modules:

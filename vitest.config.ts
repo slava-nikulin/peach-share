@@ -8,7 +8,6 @@ export default mergeConfig(
   baseViteConfig,
   defineConfig({
     test: {
-      globalSetup: ['src/tests/setup/global-testcontainers.ts'],
       projects: [
         {
           extends: true,
@@ -22,8 +21,12 @@ export default mergeConfig(
           extends: true,
           test: {
             name: 'integration',
+            globalSetup: ['src/tests/setup/integration-testcontainers.ts'],
             include: ['**/*.int.{test,spec}.ts?(x)'],
-            setupFiles: ['src/tests/setup/node-webrtc.ts'],
+            setupFiles: [
+              'src/tests/setup/node-webrtc.ts',
+              'src/tests/setup/integration-firebase.ts',
+            ],
             environment: 'node',
             testTimeout: 120_000,
             hookTimeout: 120_000,

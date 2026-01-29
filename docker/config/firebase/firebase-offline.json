@@ -11,7 +11,8 @@
     },
     "ui": {
       "enabled": false
-    }
+    },
+    "functions": { "port": 5001 }
   },
   "database": {
     "rules": "/app/config/database.rules.json"

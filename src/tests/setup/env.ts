@@ -35,17 +35,17 @@ export function setupTestEnv(opts: Opts): FirebaseEnvSetup {
   process.env.FIREBASE_DATABASE_EMULATOR_HOST = `${hostname}:${dbPort}`;
 
   vi.stubEnv('VITE_USE_EMULATORS', 'true');
-  vi.stubEnv('VITE_USE_LOCAL_SECURED_CONTEXT', 'true');
+  vi.stubEnv('VITE_USE_LOCAL_SECURED_CONTEXT', 'false');
   vi.stubEnv('VITE_FIREBASE_PROJECT_ID', projectId);
   vi.stubEnv('MODE', 'emu');
 
-  vi.stubEnv('VITE_EMULATOR_RTD_HOST', hostname);
+  vi.stubEnv('VITE_EMULATOR_HOST', hostname);
   vi.stubEnv('VITE_EMULATOR_RTDB_PORT', String(dbPort));
   vi.stubEnv('VITE_EMULATOR_RTD_NS', `${projectId}-default-rtdb`);
 
   if (typeof authPort === 'number') {
     vi.stubEnv('VITE_EMULATOR_AUTH', 'true');
-    vi.stubEnv('VITE_EMULATOR_AUTH_HOST', hostname);
+    vi.stubEnv('VITE_EMULATOR_HOST', hostname);
     vi.stubEnv('VITE_EMULATOR_AUTH_PORT', String(authPort));
   }
 

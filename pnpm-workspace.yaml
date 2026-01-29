@@ -1,3 +1,7 @@
+packages:
+  - .
+  - functions
+
 onlyBuiltDependencies:
   - '@firebase/util'
   - '@tailwindcss/oxide'
@@ -5,4 +9,5 @@ onlyBuiltDependencies:
   - esbuild
   - protobufjs
   - ssh2
+  - unrs-resolver
   - wrtc
