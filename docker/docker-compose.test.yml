@@ -1,5 +1,7 @@
 services:
   rtdb-emulator:
+    environment:
+      NODE_OPTIONS: "--trace-uncaught"
     ports:
       - "4000:4000"
       - "9000:9000"

@@ -1,3 +1,4 @@
+import { Mutex } from 'async-mutex';
 import { type FirebaseApp, type FirebaseOptions, getApps, initializeApp } from 'firebase/app';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import {
@@ -5,6 +6,8 @@ import {
   browserLocalPersistence,
   connectAuthEmulator,
   getAuth,
+  inMemoryPersistence,
+  initializeAuth,
   indexedDBLocalPersistence,
   setPersistence,
   signInAnonymously,
@@ -29,7 +32,7 @@ export class FirebaseCore {
   private db!: Database;
 
   private initPromise?: Promise<void>;
-  private opLock = false; // у тебя максимум одна операция/сессия
+  private readonly rtdbMutex = new Mutex();
 
   private constructor() {}
 
@@ -65,14 +68,15 @@ export class FirebaseCore {
         }
       }
 
-      this.auth = getAuth(this.app);
-
-      // Auth emulator
+      // Auth init (+ emulator quirks)
       if (useEmulators) {
+        this.pruneFirebaseLocalStorage();
+        this.auth = initializeAuth(this.app, { persistence: inMemoryPersistence });
         const host = (env.VITE_EMULATOR_HOST || location.hostname).trim();
         const port = Number(env.VITE_EMULATOR_AUTH_PORT || 9099);
         connectAuthEmulator(this.auth, `http://${host}:${port}`, { disableWarnings: true });
       } else {
+        this.auth = getAuth(this.app);
         await setPersistence(this.auth, indexedDBLocalPersistence).catch(() =>
           setPersistence(this.auth, browserLocalPersistence),
         );
@@ -114,7 +118,7 @@ export class FirebaseCore {
 
     // `ns` параметр нужен для RTDB URL, как в официальных примерах. [web:247]
     const projectId = env.VITE_FIREBASE_PROJECT_ID || 'demo';
-    const ns = env.VITE_EMULATOR_RTD_NS || `${projectId}-default-rtdb`;
+    const ns = env.VITE_EMULATOR_RTD_NS || `${projectId}`;
 
     const origin = `${protocol}//${hostname}:${port}`;
     const dbUrl = ns ? `${origin}?ns=${encodeURIComponent(ns)}` : origin;
@@ -167,16 +171,14 @@ export class FirebaseCore {
   }
 
   async withOnline<T>(fn: (db: Database) => Promise<T>): Promise<T> {
-    if (this.opLock) throw new Error('Another RTDB operation is already running');
-    this.opLock = true;
-
-    const db = this.database;
-    goOnline(db); // [web:223]
-    try {
-      return await fn(db);
-    } finally {
-      goOffline(db); // [web:223]
-      this.opLock = false;
-    }
+    return this.rtdbMutex.runExclusive(async () => {
+      const db = this.database;
+      goOnline(db);
+      try {
+        return await fn(db);
+      } finally {
+        goOffline(db);
+      }
+    });
   }
 }

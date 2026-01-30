@@ -28,15 +28,18 @@ export class InitRoomUseCase {
 
     const deltas = [1, 2, 3].filter((d) => round - d > 0);
 
-    const candidates = await Promise.all(
+    const otpEntries = await Promise.all(
       deltas.map(async (d) => {
         const [rnd] = await this.otpClient.getOtp(round - d);
         const id = uint8ArrayToBase64(await this.kdf.deriveRoomId(prs, rnd), { urlSafe: true });
-        return (await this.roomsRepo.roomExists(id)) ? id : null;
+        return id;
       }),
     );
 
-    const found = candidates.find((x): x is string => x !== null);
-    return found ? { intent: 'join', roomId: found } : { intent: 'create', roomId: id0 };
+    for (const id of otpEntries) {
+      if (await this.roomsRepo.roomExists(id)) return { intent: 'join', roomId: id };
+    }
+
+    return { intent: 'create', roomId: id0 };
   }
 }

@@ -7,17 +7,29 @@
       ".write": false,
       "$roomId": {
         ".read": "auth != null",
-        ".write": "auth != null && data.exists() && !newData.exists() && data.hasChildren(['created_by','created_at']) && data.child('created_by').val() == auth.uid",
-        ".validate": "!newData.exists() || (newData.hasChildren(['created_by','created_at']) && newData.child('created_by').isString() && newData.child('created_at').isNumber())"
+        ".write": "auth != null && data.exists() && !newData.exists() && data.child('created_by').val() == auth.uid",
+        "created_by": {
+          ".validate": "newData.isString()"
+        },
+        "created_at": {
+          ".validate": "newData.isNumber()"
+        },
+        "$other": {
+          ".validate": false
+        }
       }
     },
     "$uid": {
       ".read": false,
-      ".write": "auth != null && auth.uid == $uid && data.exists() && !newData.exists()",
       "$roomId": {
         ".read": false,
-        ".write": "auth != null && auth.uid == $uid && !data.exists() && newData.exists() && newData.hasChildren(['created_at'])",
-        ".validate": "!newData.exists() || (newData.hasChildren(['created_at']) && newData.child('created_at').isNumber())"
+        ".write": "auth != null && auth.uid == $uid && (( !data.exists() && newData.exists() ) || ( data.exists() && newData.exists() && data.child('created_at').isNumber() && data.child('created_at').val() <= now - 120000 ) || ( data.exists() && !newData.exists() ))",
+        "created_at": {
+          ".validate": "newData.isNumber() && newData.val() <= now && newData.val() >= now - 10000"
+        },
+        "$other": {
+          ".validate": false
+        }
       }
     }
   }

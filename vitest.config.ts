@@ -26,6 +26,7 @@ export default mergeConfig(
             setupFiles: [
               'src/tests/setup/node-webrtc.ts',
               'src/tests/setup/integration-firebase.ts',
+              'src/tests/setup/integration-drand-mock.ts',
             ],
             environment: 'node',
             testTimeout: 120_000,

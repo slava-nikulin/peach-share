@@ -11,7 +11,7 @@ services:
         protocol: udp
       - target: 3478
         protocol: tcp
-    profiles: ['emu']
+    profiles: ['emu', 'e2e']
 
   rtdb-emulator:
     build:
@@ -26,21 +26,21 @@ services:
       - firebase-emulator-cache:/opt/firebase
       - firebase-emulator-cache-ui:/opt/firebase/.cache
     environment:
-      PROJECT_ID: demo-peach-share
       FIREBASE_EMULATOR_DOWNLOAD_PATH: /opt/firebase
+      RTDB_NS: ${VITE_EMULATOR_RTD_NS:-demo-peach-share}
       XDG_CACHE_HOME: /opt/firebase/.cache
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "curl -sS \"http://localhost:9000/.json?ns=$${PROJECT_ID}-default-rtdb\" >/dev/null && curl -sS http://localhost:9099/ >/dev/null && curl -sS http://localhost:5001/ >/dev/null"
+          "curl -sS \"http://localhost:9000/.json?ns=$${RTDB_NS}\" >/dev/null && curl -sS http://localhost:9099/ >/dev/null && curl -sS http://localhost:5001/ >/dev/null"
         ]
       interval: 5s
       timeout: 2s
       retries: 20
       start_period: 10s
     entrypoint: ['/app/scripts/emulator-entrypoint.sh']
-    profiles: ['integration-test', 'emu']
+    profiles: ['integration-test', 'emu', 'e2e']
 
   web:
     build:
@@ -50,7 +50,6 @@ services:
     volumes:
       - ..:/src:delegated
       - pnpm-store:/var/pnpm-store
-      - node_modules:/src/node_modules
     environment:
       MODE: emu
       CHOKIDAR_USEPOLLING: '1'
@@ -65,10 +64,9 @@ services:
     depends_on:
       - rtdb-emulator
       - stun
-    profiles: ['emu']
+    profiles: ['emu', 'e2e']
 
 volumes:
-  node_modules:
   pnpm-store:
   firebase-emulator-cache:
   firebase-emulator-cache-ui:

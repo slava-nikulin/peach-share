@@ -15,7 +15,11 @@ export function getBrowserByRole(role: Role): WebdriverIO.Browser {
 }
 
 export class Page {
-  constructor(protected readonly role: Role) {}
+  protected readonly role: Role;
+
+  constructor(role: Role) {
+    this.role = role;
+  }
 
   protected get browser(): WebdriverIO.Browser {
     return getBrowserByRole(this.role);

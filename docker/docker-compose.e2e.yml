@@ -16,7 +16,10 @@ services:
         condition: service_healthy
       stun:
         condition: service_started
+  profiles: ['e2e']
+  
 
   web:
     environment:
       MODE: e2e
+    profiles: ['e2e']

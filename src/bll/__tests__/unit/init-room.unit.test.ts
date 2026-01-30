@@ -96,7 +96,6 @@ describe('InitRoomUseCase', () => {
     const id0 = roomIdFromSalt(salt0);
     const idR4 = roomIdFromSalt(saltR4);
     const idR3 = roomIdFromSalt(saltR3);
-    const idR2 = roomIdFromSalt(saltR2);
 
     const { otpClient, getOpt } = makeOtpMock({
       latestRound,
@@ -123,11 +122,10 @@ describe('InitRoomUseCase', () => {
     expect(getOpt).toHaveBeenNthCalledWith(4, 2);
 
     // Проверяем, что все кандидаты действительно проверялись
-    expect(roomExists).toHaveBeenCalledTimes(4);
+    expect(roomExists).toHaveBeenCalledTimes(3);
     expect(roomExists).toHaveBeenCalledWith(id0);
     expect(roomExists).toHaveBeenCalledWith(idR4);
     expect(roomExists).toHaveBeenCalledWith(idR3);
-    expect(roomExists).toHaveBeenCalledWith(idR2);
   });
 
   it('create: если ни id0, ни кандидаты (до 3 прошлых окон) не существуют', async () => {
