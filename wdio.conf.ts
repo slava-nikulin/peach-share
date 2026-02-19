@@ -10,7 +10,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
   // ====================
   // WebdriverIO supports running e2e tests as well as unit and component tests.
   runner: 'local',
-  tsConfigPath: './test/tsconfig.json',
+  tsConfigPath: './tsconfig.e2e.json',
 
   //
   // ==================

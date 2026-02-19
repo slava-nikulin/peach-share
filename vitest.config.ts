@@ -8,6 +8,7 @@ export default mergeConfig(
   baseViteConfig,
   defineConfig({
     test: {
+      globals: true,
       projects: [
         {
           extends: true,

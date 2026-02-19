@@ -25,11 +25,20 @@ export class Page {
     return getBrowserByRole(this.role);
   }
 
-  public async open(): Promise<void> {
-    await this.browser.url(APP_URL);
+  public async open(path: string = '/'): Promise<void> {
+    const url = new URL(path, APP_URL).toString();
+    await this.browser.url(url);
   }
 
   public pause(ms: number): Promise<void> {
     return this.browser.pause(ms);
+  }
+
+  public async back(): Promise<void> {
+    await this.browser.back();
+  }
+
+  public async forward(): Promise<void> {
+    await this.browser.forward();
   }
 }

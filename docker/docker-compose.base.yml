@@ -27,18 +27,13 @@ services:
       - firebase-emulator-cache-ui:/opt/firebase/.cache
     environment:
       FIREBASE_EMULATOR_DOWNLOAD_PATH: /opt/firebase
-      RTDB_NS: ${VITE_EMULATOR_RTD_NS:-demo-peach-share}
       XDG_CACHE_HOME: /opt/firebase/.cache
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -sS \"http://localhost:9000/.json?ns=$${RTDB_NS}\" >/dev/null && curl -sS http://localhost:9099/ >/dev/null && curl -sS http://localhost:5001/ >/dev/null"
-        ]
-      interval: 5s
+      test: ["CMD-SHELL", "sh /app/scripts/emulator-ready.sh"]
+      interval: 2s
       timeout: 2s
-      retries: 20
-      start_period: 10s
+      retries: 90
+      start_period: 5s
     entrypoint: ['/app/scripts/emulator-entrypoint.sh']
     profiles: ['integration-test', 'emu', 'e2e']
 

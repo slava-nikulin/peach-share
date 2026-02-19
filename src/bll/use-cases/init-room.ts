@@ -1,20 +1,23 @@
 import { uint8ArrayToBase64 } from 'uint8array-extras';
+import type { RoomIntent } from '../../entity/room';
 import type { OtpClientPort } from '../ports/otp-client';
 import type { RoomIdKdfPort } from '../ports/room-id-kdf';
-import type { RoomRepositoryPort } from '../ports/room-repository';
 
-export type RoomIntent = 'create' | 'join';
 export interface RoomInitial {
   intent: RoomIntent;
   roomId: string;
 }
 
+export interface InitRoomRepositoryPort {
+  roomExists(roomId: string): Promise<boolean>;
+}
+
 export class InitRoomUseCase {
-  private readonly roomsRepo: RoomRepositoryPort;
+  private readonly roomsRepo: InitRoomRepositoryPort;
   private readonly kdf: RoomIdKdfPort;
   private readonly otpClient: OtpClientPort;
 
-  constructor(roomsRepo: RoomRepositoryPort, kdf: RoomIdKdfPort, otpClient: OtpClientPort) {
+  constructor(roomsRepo: InitRoomRepositoryPort, kdf: RoomIdKdfPort, otpClient: OtpClientPort) {
     this.roomsRepo = roomsRepo;
     this.kdf = kdf;
     this.otpClient = otpClient;

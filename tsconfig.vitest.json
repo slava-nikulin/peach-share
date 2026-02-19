@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "src/**/*.unit.{test,spec}.ts",
+    "src/**/*.int.{test,spec}.ts",
+    "src/**/*.e2e-vitest.{test,spec}.ts",
+    "src/tests/**/*.ts"
+  ]
+}

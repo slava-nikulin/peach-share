@@ -3,8 +3,7 @@ import { uint8ArrayToBase64 } from 'uint8array-extras';
 import { describe, expect, it, vi } from 'vitest';
 import type { OtpClientPort } from '../../ports/otp-client';
 import type { RoomIdKdfPort } from '../../ports/room-id-kdf';
-import type { RoomRepositoryPort } from '../../ports/room-repository';
-import { InitRoomUseCase } from '../../use-cases/init-room';
+import { type InitRoomRepositoryPort, InitRoomUseCase } from '../../use-cases/init-room';
 
 function derivedBytes(salt: Uint8Array): Uint8Array {
   // Детерминированно и уникально для разных salt
@@ -47,7 +46,7 @@ function makeRepoMock(existsById: (roomId: string) => boolean) {
   const roomExists = vi
     .fn<(roomId: string) => Promise<boolean>>()
     .mockImplementation(async (id: string) => existsById(id));
-  const roomsRepo: RoomRepositoryPort = { roomExists };
+  const roomsRepo: InitRoomRepositoryPort = { roomExists };
   return { roomsRepo, roomExists };
 }
 
@@ -269,7 +268,7 @@ describe('InitRoomUseCase', () => {
     const roomExists = vi
       .fn<(roomId: string) => Promise<boolean>>()
       .mockRejectedValueOnce(new Error('db down'));
-    const roomsRepo: RoomRepositoryPort = { roomExists };
+    const roomsRepo: InitRoomRepositoryPort = { roomExists };
 
     const uc = new InitRoomUseCase(roomsRepo, kdf, otpClient);
 

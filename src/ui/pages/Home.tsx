@@ -1,16 +1,18 @@
 /** biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: <explanation> */
+
+import { useNavigate } from '@solidjs/router';
 import { type Component, createSignal, Show } from 'solid-js';
-import { BLL } from '../../app/bll-facade';
-import type { RoomIntent } from '../../bll/use-cases/init-room';
+import { getBll } from '../../app/bll';
+import type { RoomIntent } from '../../entity/room';
 
 export const Home: Component = () => {
+  const navigate = useNavigate();
+
   const [raw, setRaw] = createSignal(''); // 6 digits
   const [busy, setBusy] = createSignal(false);
-
   const [modalOpen, setModalOpen] = createSignal(false);
   const [modalKind, setModalKind] = createSignal<RoomIntent>('create');
 
-  const normalizeDigits6 = (s: string) => s.replace(/\D/g, '').slice(0, 6);
   const format = (d: string) => (d.length <= 3 ? d : `${d.slice(0, 3)}-${d.slice(3, 6)}`);
   const random6 = () => String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
 
@@ -39,7 +41,8 @@ export const Home: Component = () => {
 
               setBusy(true);
               try {
-                const roomIntent = await BLL.RoomService.InitRoom(code);
+                const bll = await getBll();
+                const roomIntent = await bll.initRoom.run(code);
                 openConfirm(roomIntent.intent);
               } finally {
                 setBusy(false);
@@ -73,7 +76,7 @@ export const Home: Component = () => {
                   }}
                   onInput={(e) => {
                     const el = e.currentTarget;
-                    const digits = normalizeDigits6(el.value);
+                    const digits = el.value.replace(/\D/g, '').slice(0, 6);
                     setRaw(digits);
                     el.value = format(digits);
                   }}
@@ -97,6 +100,7 @@ export const Home: Component = () => {
                     stroke-linecap="round"
                     stroke-linejoin="round"
                   >
+                    <title>Generate random code</title>
                     <path d="M20 12a8 8 0 1 1-6.34-7.66" />
                     <path d="M13 1.5l3 3-3 3" />
                   </svg>
@@ -104,7 +108,7 @@ export const Home: Component = () => {
 
                 <button
                   type="button"
-                  class="inline-flex items-center justify-center rounded-r-lg border border-l-0 border-gray-300 bg-white px-3 py-2 text-gray-700 hover:bg-gray-50 focus:z-10 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                  class="inline-flex items-center justify-center rounded-r-lg border border-gray-300 border-l-0 bg-white px-3 py-2 text-gray-700 hover:bg-gray-50 focus:z-10 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   title="Clear"
                   onClick={() => setRaw('')}
                   disabled={busy()}
@@ -182,8 +186,13 @@ export const Home: Component = () => {
                 class="rounded-lg bg-gray-900 px-4 py-2 font-medium text-sm text-white hover:bg-gray-800 focus:outline-none focus:ring-4 focus:ring-gray-300"
                 onClick={() => {
                   setModalOpen(false);
-                  // TODO: здесь будет navigate(`/room/${raw()}`, { state: { start: true, intent: modalKind() } })
-                  alert(`TODO: ${modalKind()} ${raw()}`);
+                  const nonce =
+                    globalThis.crypto?.randomUUID?.() ??
+                    `n_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+
+                  navigate(`/room/${raw()}`, {
+                    state: { start: true, intent: 'create', nonce },
+                  });
                 }}
               >
                 Confirm
