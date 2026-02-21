@@ -17,6 +17,9 @@ export type FirebaseRtdbConnection = {
 export type ProdRtdbConfig = {
   app: FirebaseAppInit;
 
+  /** Force RTDB transport to WebSockets only (without long-polling fallback). */
+  forceWebSockets?: boolean;
+
   /**
    * Если хочешь AppCheck — передай.
    * Если не хочешь — undefined, адаптер вообще не думает, "надо/не надо".
@@ -47,6 +50,9 @@ export type EmulatorRtdbConfig = {
 
     /** Твой хак для https-страницы + эмулятор */
     forceSecureRepo?: boolean;
+
+    /** Force RTDB transport to WebSockets only (without long-polling fallback). */
+    forceWebSockets?: boolean;
 
     /** Иногда полезно для устранения залипаний на старых origin/namespace */
     // pruneFirebaseLocalStorage?: boolean;

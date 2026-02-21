@@ -6,7 +6,7 @@ import {
   setPersistence,
   signInAnonymously,
 } from 'firebase/auth';
-import { getDatabase } from 'firebase/database';
+import { forceWebSockets, getDatabase } from 'firebase/database';
 import { getOrInitApp } from './shared';
 import type { FirebaseRtdbConnection, ProdRtdbConfig } from './types';
 
@@ -17,6 +17,10 @@ type AppCheckDebugGlobal = typeof globalThis & {
 export async function createProdRtdbConnection(
   cfg: ProdRtdbConfig,
 ): Promise<FirebaseRtdbConnection> {
+  if (cfg.forceWebSockets) {
+    setWebSocketsOnly();
+  }
+
   const app = getOrInitApp(cfg.app);
 
   if (cfg.appCheck) {
@@ -47,4 +51,12 @@ export async function createProdRtdbConnection(
   const db = getDatabase(app);
 
   return { app, auth, db };
+}
+
+function setWebSocketsOnly(): void {
+  try {
+    forceWebSockets();
+  } catch (e) {
+    console.warn('[FirebaseRTDB] forceWebSockets failed:', e);
+  }
 }

@@ -12,6 +12,7 @@ type View = 'error' | 'loading' | 'content';
 type RoomNavState = {
   start: true;
   intent: RoomIntent;
+  roomId: string;
   nonce: string;
 };
 
@@ -62,15 +63,17 @@ export function Room(): JSX.Element {
   };
 
   const runGuard = (): { roomId: string; intent: RoomIntent } | null => {
-    const roomId = params.id;
+    const routeRoomCode = params.id;
     const navState = location.state;
 
     const hasValidState =
-      !!roomId &&
+      !!routeRoomCode &&
       !!navState &&
       navState.start === true &&
       typeof navState.intent === 'string' &&
       navState.intent.length > 0 &&
+      typeof navState.roomId === 'string' &&
+      navState.roomId.length > 0 &&
       typeof navState.nonce === 'string' &&
       navState.nonce.length > 0;
 
@@ -89,7 +92,7 @@ export function Room(): JSX.Element {
 
     sessionStorage.setItem(storageKey, '1');
 
-    return { roomId, intent: navState.intent };
+    return { roomId: navState.roomId, intent: navState.intent };
   };
 
   const startRoomFlow = async (intent: RoomIntent, roomId: string): Promise<void> => {
@@ -99,25 +102,35 @@ export function Room(): JSX.Element {
   };
 
   onMount(() => {
-    const runEntry = async () => {
+    let runVersion = 0;
+
+    const runEntry = () => {
+      const currentRun = ++runVersion;
+
       try {
         const ok = runGuard();
         if (!ok) return;
 
-        setView('loading');
-        await startRoomFlow(ok.intent, ok.roomId);
         setView('content');
+        void startRoomFlow(ok.intent, ok.roomId).catch((err) => {
+          if (runVersion !== currentRun) return;
+          console.error('Room startup failed in background:', err);
+        });
       } catch (err) {
+        if (runVersion !== currentRun) return;
         showError('operation_failed', err);
       }
     };
 
-    void runEntry();
+    runEntry();
 
-    const onPop = () => queueMicrotask(() => void runEntry());
+    const onPop = () => queueMicrotask(runEntry);
     window.addEventListener('popstate', onPop);
 
-    onCleanup(() => window.removeEventListener('popstate', onPop));
+    onCleanup(() => {
+      runVersion += 1;
+      window.removeEventListener('popstate', onPop);
+    });
   });
 
   return (

@@ -8,7 +8,6 @@ import { RtdbOnlineRunner } from '../adapters/firebase/rtdb-online-runner';
 import { RtdbRoomRepository } from '../adapters/firebase/rtdb-room-repository';
 import { DrandOtpClient } from '../adapters/otp-drand';
 import { CpaceEngine } from '../adapters/pake-engine/cpace';
-import { SimplePeerEngine } from '../adapters/webrtc-engine/simple-peer';
 import { CreateRoomUseCase } from '../bll/use-cases/create-room';
 import { InitRoomUseCase } from '../bll/use-cases/init-room';
 import { JoinRoomUseCase } from '../bll/use-cases/join-room';
@@ -22,6 +21,7 @@ function must(env: ImportMetaEnv, key: string): string {
 export async function compose() {
   const env = import.meta.env;
   const useEmulators = env.VITE_USE_EMULATORS === 'true';
+  const forceRtdbWebSockets = env.VITE_FIREBASE_FORCE_WEBSOCKETS === 'true';
 
   const firebaseOptions: FirebaseOptions = useEmulators
     ? {
@@ -49,10 +49,12 @@ export async function compose() {
           protocol: location.protocol === 'https:' ? 'https:' : 'http:',
           namespace: env.VITE_EMULATOR_RTD_NS || (firebaseOptions.projectId as string) || 'demo',
           forceSecureRepo: env.VITE_USE_LOCAL_SECURED_CONTEXT === 'true',
+          forceWebSockets: forceRtdbWebSockets,
         },
       })
     : await createProdRtdbConnection({
         app: { name: 'main', options: firebaseOptions },
+        forceWebSockets: forceRtdbWebSockets,
         appCheck: env.VITE_APPCHECK_SITEKEY
           ? { siteKey: env.VITE_APPCHECK_SITEKEY, debugToken: env.VITE_APPCHECK_DEBUG_TOKEN }
           : undefined,
@@ -62,13 +64,29 @@ export async function compose() {
   const roomRepo = new RtdbRoomRepository(firebase.db);
   const argonAdapter = new Argon2idBrowserKdf();
   const otpClient = new DrandOtpClient();
-  const pake = new CpaceEngine();
-  const webrtc = new SimplePeerEngine();
-
   // Usecases (core)
   const initRoomCore = new InitRoomUseCase(roomRepo, argonAdapter, otpClient);
-  const createRoomCore = new CreateRoomUseCase(roomRepo, pake, webrtc, 5000, 30000);
-  const joinRoomCore = new JoinRoomUseCase(roomRepo, pake, webrtc, 5000);
+
+  let roomFlowsPromise:
+    | Promise<{ createRoomCore: CreateRoomUseCase; joinRoomCore: JoinRoomUseCase }>
+    | undefined;
+
+  const getRoomFlows = async () => {
+    if (!roomFlowsPromise) {
+      roomFlowsPromise = (async () => {
+        const { SimplePeerEngine } = await import('../adapters/webrtc-engine/simple-peer');
+        const pake = new CpaceEngine();
+        const webrtc = new SimplePeerEngine();
+
+        return {
+          createRoomCore: new CreateRoomUseCase(roomRepo, pake, webrtc, 5000, 30000),
+          joinRoomCore: new JoinRoomUseCase(roomRepo, pake, webrtc, 5000),
+        };
+      })();
+    }
+
+    return await roomFlowsPromise;
+  };
 
   // Runners (policy)
   const onlineRunner = new RtdbOnlineRunner(firebase.db);
@@ -83,12 +101,18 @@ export async function compose() {
     },
     createRoom: {
       run: (roomId: string) => {
-        return onlineRunner.run(() => createRoomCore.run(uid, roomId));
+        return onlineRunner.run(async () => {
+          const { createRoomCore } = await getRoomFlows();
+          return await createRoomCore.run(uid, roomId);
+        });
       },
     },
     joinRoom: {
       run: (roomId: string) => {
-        return onlineRunner.run(() => joinRoomCore.run(uid, roomId));
+        return onlineRunner.run(async () => {
+          const { joinRoomCore } = await getRoomFlows();
+          return await joinRoomCore.run(uid, roomId);
+        });
       },
     },
   } as const;

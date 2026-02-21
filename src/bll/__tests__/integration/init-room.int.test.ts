@@ -134,9 +134,9 @@ describe('InitRoomUseCase integration: join when room exists', () => {
     expect(g.__drandMock.requests).toContain('GET /v2/beacons/quicknet/rounds/latest');
     expect(g.__drandMock.requests).toContain(`GET /v2/beacons/quicknet/rounds/${round - 1}`);
     expect(g.__drandMock.requests).toContain(`GET /v2/beacons/quicknet/rounds/${round - 2}`);
-    expect(g.__drandMock.requests).toContain(`GET /v2/beacons/quicknet/rounds/${round - 3}`);
+    // expect(g.__drandMock.requests).toContain(`GET /v2/beacons/quicknet/rounds/${round - 3}`);
 
     // и всего должно быть 4 drand-запроса в этом сценарии
-    expect(g.__drandMock.requests.filter((x) => x.includes('/rounds/')).length).toBe(4);
+    expect(g.__drandMock.requests.filter((x) => x.includes('/rounds/')).length).toBe(3);
   });
 });

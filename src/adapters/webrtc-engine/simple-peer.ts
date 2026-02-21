@@ -1,4 +1,4 @@
-import Peer, { type SignalData } from 'simple-peer';
+import SimplePeer, { type Instance as PeerInstance, type Options as PeerOptions, type SignalData } from 'simple-peer';
 import type { P2pChannel } from '../../bll/ports/p2p-channel';
 import type { WebRtcPort, WebRtcRole, WebRtcSessionId, WebRtcSignal } from '../../bll/ports/webrtc';
 import { SimplePeerChannel } from './simple-peer-channel';
@@ -45,7 +45,7 @@ function fromWire(s: WebRtcSignal): SignalData {
   }
 }
 
-function withTimeout<T>(
+async function withTimeout<T>(
   p: Promise<T>,
   timeoutMs: number,
   onTimeout: () => void,
@@ -66,31 +66,36 @@ function withTimeout<T>(
   // Важное: прикрепляем обработчик, чтобы поздний reject не выстрелил как unhandled.
   void p.catch(() => {});
 
-  return Promise.race([p, timeout]).finally(() => {
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
     if (timer) clearTimeout(timer);
-  });
+  }
 }
 
 type Session = {
   role: WebRtcRole;
-  peer: Peer.Instance;
+  peer: PeerInstance;
   offer?: Deferred<WebRtcSignal>; // only initiator
   connected?: Deferred<void>; // after acceptAnswer/generateAnswer
 };
 
 type SimplePeerEngineOpts = {
   rtcConfig?: RTCConfiguration;
-  wrtc?: any; // тип можно уточнить под @avahq/wrtc
+  wrtc?: PeerOptions['wrtc'];
 };
 
 export class SimplePeerEngine implements WebRtcPort {
   private readonly sessions = new Map<WebRtcSessionId, Session>();
+  private readonly opts: SimplePeerEngineOpts;
 
-  constructor(private readonly opts: SimplePeerEngineOpts = {}) {}
+  constructor(opts: SimplePeerEngineOpts = {}) {
+    this.opts = opts;
+  }
 
   newSession(role: WebRtcRole, rtcConfig?: RTCConfiguration): WebRtcSessionId {
     const sid = this.genId();
-    const peer = new Peer({
+    const peer = new SimplePeer({
       initiator: role === 'initiator',
       trickle: false,
       config: rtcConfig ?? this.opts.rtcConfig,
@@ -103,12 +108,12 @@ export class SimplePeerEngine implements WebRtcPort {
     if (role === 'initiator') {
       s.offer = deferred<WebRtcSignal>();
       void s.offer.promise.catch(() => {});
-      peer.once('signal', (data: SignalData) => s.offer?.resolve(toWire(data)));
+      peer.once('signal', (data) => s.offer?.resolve(toWire(data)));
     }
 
     // Единый lifecycle
     peer.once('close', () => this.finalize(sid, new Error('peer closed')));
-    peer.once('error', (err: unknown) => this.finalize(sid, err));
+    peer.once('error', (err) => this.finalize(sid, err));
 
     this.sessions.set(sid, s);
     return sid;
@@ -130,7 +135,6 @@ export class SimplePeerEngine implements WebRtcPort {
 
     this.ensureConnectedDeferred(s);
 
-    // signal может кинуть (например, если peer уже destroyed) :contentReference[oaicite:7]{index=7}
     try {
       s.peer.signal(fromWire(answer));
     } catch (e) {
@@ -149,8 +153,8 @@ export class SimplePeerEngine implements WebRtcPort {
     const ans = deferred<WebRtcSignal>();
     void ans.promise.catch(() => {});
 
-    s.peer.once('signal', (data: SignalData) => ans.resolve(toWire(data)));
-    s.peer.once('error', (err: unknown) => ans.reject(err));
+    s.peer.once('signal', (data) => ans.resolve(toWire(data)));
+    s.peer.once('error', (err) => ans.reject(err));
 
     try {
       s.peer.signal(fromWire(offer));
@@ -185,13 +189,12 @@ export class SimplePeerEngine implements WebRtcPort {
     s.connected = deferred<void>();
     void s.connected.promise.catch(() => {});
 
-    // connect/data channel ready :contentReference[oaicite:8]{index=8}
     s.peer.once('connect', () => s.connected?.resolve());
 
     // если закрыли до коннекта — это ошибка сценария
     s.peer.once('close', () => s.connected?.reject(new Error('closed before connect')));
     // error обработается finalize(), но на всякий случай:
-    s.peer.once('error', (err: unknown) => s.connected?.reject(err));
+    s.peer.once('error', (err) => s.connected?.reject(err));
   }
 
   private finalize(sid: WebRtcSessionId, err: unknown): void {

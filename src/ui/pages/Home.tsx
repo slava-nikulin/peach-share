@@ -3,6 +3,7 @@
 import { useNavigate } from '@solidjs/router';
 import { type Component, createSignal, Show } from 'solid-js';
 import { getBll } from '../../app/bll';
+import type { RoomInitial } from '../../bll/use-cases/init-room';
 import type { RoomIntent } from '../../entity/room';
 
 export const Home: Component = () => {
@@ -12,12 +13,14 @@ export const Home: Component = () => {
   const [busy, setBusy] = createSignal(false);
   const [modalOpen, setModalOpen] = createSignal(false);
   const [modalKind, setModalKind] = createSignal<RoomIntent>('create');
+  const [pendingRoom, setPendingRoom] = createSignal<RoomInitial | null>(null);
 
   const format = (d: string) => (d.length <= 3 ? d : `${d.slice(0, 3)}-${d.slice(3, 6)}`);
   const random6 = () => String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
 
-  const openConfirm = (kind: RoomIntent) => {
-    setModalKind(kind);
+  const openConfirm = (room: RoomInitial) => {
+    setPendingRoom(room);
+    setModalKind(room.intent);
     setModalOpen(true);
   };
 
@@ -42,8 +45,8 @@ export const Home: Component = () => {
               setBusy(true);
               try {
                 const bll = await getBll();
-                const roomIntent = await bll.initRoom.run(code);
-                openConfirm(roomIntent.intent);
+                const room = await bll.initRoom.run(code);
+                openConfirm(room);
               } finally {
                 setBusy(false);
               }
@@ -151,7 +154,13 @@ export const Home: Component = () => {
       {/* Confirm modal (Flowbite-style markup) */}
       <Show when={modalOpen()}>
         <div class="fixed inset-0 z-50 flex items-center justify-center">
-          <div class="absolute inset-0 bg-gray-900/50" onClick={() => setModalOpen(false)} />
+          <div
+            class="absolute inset-0 bg-gray-900/50"
+            onClick={() => {
+              setModalOpen(false);
+              setPendingRoom(null);
+            }}
+          />
           <div class="relative z-10 w-[min(92vw,420px)] rounded-2xl bg-white p-6 shadow-lg">
             <h3 class="mb-2 font-semibold text-gray-900 text-lg">
               <Show when={modalKind() === 'create'} fallback={<>Join room?</>}>
@@ -177,7 +186,10 @@ export const Home: Component = () => {
               <button
                 type="button"
                 class="rounded-lg border border-gray-200 bg-white px-4 py-2 font-medium text-gray-900 text-sm hover:bg-gray-50 focus:outline-none focus:ring-4 focus:ring-gray-100"
-                onClick={() => setModalOpen(false)}
+                onClick={() => {
+                  setModalOpen(false);
+                  setPendingRoom(null);
+                }}
               >
                 Cancel
               </button>
@@ -185,13 +197,22 @@ export const Home: Component = () => {
                 type="button"
                 class="rounded-lg bg-gray-900 px-4 py-2 font-medium text-sm text-white hover:bg-gray-800 focus:outline-none focus:ring-4 focus:ring-gray-300"
                 onClick={() => {
+                  const room = pendingRoom();
+                  if (!room) return;
+
                   setModalOpen(false);
+                  setPendingRoom(null);
                   const nonce =
                     globalThis.crypto?.randomUUID?.() ??
                     `n_${Math.random().toString(16).slice(2)}_${Date.now()}`;
 
                   navigate(`/room/${raw()}`, {
-                    state: { start: true, intent: 'create', nonce },
+                    state: {
+                      start: true,
+                      intent: room.intent,
+                      roomId: room.roomId,
+                      nonce,
+                    },
                   });
                 }}
               >

@@ -5,7 +5,12 @@ import {
   inMemoryPersistence,
   signInAnonymously,
 } from 'firebase/auth';
-import { connectDatabaseEmulator, type Database, getDatabase } from 'firebase/database';
+import {
+  connectDatabaseEmulator,
+  type Database,
+  forceWebSockets,
+  getDatabase,
+} from 'firebase/database';
 import { getOrInitApp } from './shared';
 import type { EmulatorRtdbConfig, FirebaseRtdbConnection } from './types';
 
@@ -33,6 +38,10 @@ function createEmulatorDatabase(
   app: FirebaseApp,
   emulator: EmulatorRtdbConfig['emulator'],
 ): Database {
+  if (emulator.forceWebSockets) {
+    setWebSocketsOnly();
+  }
+
   // В RTDB эмуляторе namespace критичен: делаем URL с ?ns=
   const origin = `${emulator.protocol}//${emulator.host}:${emulator.rtdbPort}`;
   const dbUrl = `${origin}?ns=${encodeURIComponent(emulator.namespace)}`;
@@ -50,6 +59,14 @@ function createEmulatorDatabase(
   }
 
   return db;
+}
+
+function setWebSocketsOnly(): void {
+  try {
+    forceWebSockets();
+  } catch (e) {
+    console.warn('[FirebaseRTDB] forceWebSockets failed:', e);
+  }
 }
 
 function forceSecureRepo(db: Database): void {

@@ -8,10 +8,19 @@ const rootDir = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [solid(), tailwindcss()],
+  define: {
+    global: 'globalThis',
+  },
   resolve: {
     alias: [
       { find: /^argon2id$/, replacement: resolve(rootDir, 'src/argon2id.vite.ts') },
+      { find: /^simple-peer$/, replacement: 'simple-peer/simplepeer.min.js' },
+      { find: /^process$/, replacement: 'process/browser' },
+      { find: /^util$/, replacement: 'util/' },
     ],
+  },
+  optimizeDeps: {
+    include: ['process/browser', 'util'],
   },
   server: {
     host: true,

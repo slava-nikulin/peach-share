@@ -1,7 +1,8 @@
-import type Peer from 'simple-peer';
 import type { P2pChannel } from '../../bll/ports/p2p-channel';
 
 const encoder = new TextEncoder();
+
+type PeerInstance = import('simple-peer').Instance;
 
 function toUint8(data: unknown): Uint8Array {
   if (data instanceof Uint8Array) return data;
@@ -14,11 +15,14 @@ function toUint8(data: unknown): Uint8Array {
 }
 
 export class SimplePeerChannel implements P2pChannel {
-  constructor(private readonly peer: Peer.Instance) {}
+  private readonly peer: PeerInstance;
+
+  constructor(peer: PeerInstance) {
+    this.peer = peer;
+  }
 
   send(data: Uint8Array): void {
-    // simple-peer поддерживает TypedArrayView (Uint8Array) напрямую
-    this.peer.send(data as any);
+    this.peer.send(data);
   }
 
   onReceive(cb: (data: Uint8Array) => void): () => void {
@@ -27,8 +31,7 @@ export class SimplePeerChannel implements P2pChannel {
     this.peer.on('data', handler);
 
     return () => {
-      (this.peer as any).off?.('data', handler);
-      (this.peer as any).removeListener?.('data', handler);
+      this.peer.removeListener('data', handler);
     };
   }
 }

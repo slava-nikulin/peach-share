@@ -29,7 +29,7 @@ export class InitRoomUseCase {
     const id0 = uint8ArrayToBase64(await this.kdf.deriveRoomId(prs, rnd0), { urlSafe: true });
     if (await this.roomsRepo.roomExists(id0)) return { intent: 'join', roomId: id0 };
 
-    const deltas = [1, 2, 3].filter((d) => round - d > 0);
+    const deltas = [1, 2].filter((d) => round - d > 0);
 
     const otpEntries = await Promise.all(
       deltas.map(async (d) => {
