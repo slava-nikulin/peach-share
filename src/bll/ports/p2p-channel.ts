@@ -1,4 +1,6 @@
 export interface P2pChannel {
-  send(data: Uint8Array): void;
-  onReceive(cb: (data: Uint8Array) => void): () => void;
+  readable: ReadableStream<Uint8Array>;
+  writable: WritableStream<Uint8Array>;
+  close(): void;
+  onClose(cb: () => void): () => void;
 }

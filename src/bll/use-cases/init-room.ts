@@ -24,22 +24,19 @@ export class InitRoomUseCase {
   }
 
   async run(prs: string): Promise<RoomInitial> {
-    const [rnd0, round] = await this.otpClient.getOtp();
+    const currentRound = this.otpClient.currentRound();
 
+    // Все 3 раунда стартуют параллельно сразу
+    const rounds = [currentRound, currentRound - 1, currentRound - 2].filter((r) => r > 0);
+    const otpEntries = await Promise.all(rounds.map((r) => this.otpClient.getOtp(r)));
+
+    // current проверяем первым — логика приоритета сохраняется
+    const [rnd0] = otpEntries[0];
     const id0 = uint8ArrayToBase64(await this.kdf.deriveRoomId(prs, rnd0), { urlSafe: true });
     if (await this.roomsRepo.roomExists(id0)) return { intent: 'join', roomId: id0 };
 
-    const deltas = [1, 2].filter((d) => round - d > 0);
-
-    const otpEntries = await Promise.all(
-      deltas.map(async (d) => {
-        const [rnd] = await this.otpClient.getOtp(round - d);
-        const id = uint8ArrayToBase64(await this.kdf.deriveRoomId(prs, rnd), { urlSafe: true });
-        return id;
-      }),
-    );
-
-    for (const id of otpEntries) {
+    for (const [rnd] of otpEntries.slice(1)) {
+      const id = uint8ArrayToBase64(await this.kdf.deriveRoomId(prs, rnd), { urlSafe: true });
       if (await this.roomsRepo.roomExists(id)) return { intent: 'join', roomId: id };
     }
 

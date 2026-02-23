@@ -1,63 +1,74 @@
-import { sha256 } from '@noble/hashes/sha2.js';
 import { hexToBytes } from '@noble/hashes/utils.js';
+import { FastestNodeClient } from 'drand-client';
 import type { OtpClientPort } from '../bll/ports/otp-client';
 
-type DrandV2Round = {
-  round: number;
-  signature: string; // hex
-};
+// Параметры сети 'default' (именно она дает окна по 30 секунд)
+const GENESIS_MS = 1595431050_000;
+const PERIOD_MS = 30_000;
+const CHAIN_HASH = '8990e7a9aaed2ffed73dbd7092123d6f289930540d7651336225dc172e51b2ce';
+// Публичный ключ нужен drand-client для проверки подлинности маяка
+const PUBLIC_KEY =
+  '868f005eb8e6e4ca0a47c8a77ceaa5309a47978a7c71bc5cce96366b5d7a569937c529eeda66c7293784a9402801af31';
+
+const DEFAULT_ENDPOINTS = [
+  'https://api.drand.sh',
+  'https://drand.cloudflare.com',
+  'https://api2.drand.sh',
+  'https://api3.drand.sh',
+];
 
 type DrandOtpClientOpts = {
-  baseUrl?: string;
-  beaconId?: string;
-  timeoutMs?: number;
+  endpoints?: string[];
 };
 
 export class DrandOtpClient implements OtpClientPort {
-  private readonly opts: DrandOtpClientOpts;
+  private readonly client: FastestNodeClient;
 
   constructor(opts: DrandOtpClientOpts = {}) {
-    this.opts = opts;
+    // Добавляем хэш сети к URL, чтобы гарантированно стучаться в 'default'
+    const urls = (opts.endpoints ?? DEFAULT_ENDPOINTS).map((url) => `${url}/${CHAIN_HASH}`);
+
+    // FastestNodeClient берет на себя логику "гонки" запросов (Promise.any)
+    this.client = new FastestNodeClient(urls, {
+      chainVerificationParams: {
+        chainHash: CHAIN_HASH,
+        publicKey: PUBLIC_KEY,
+      },
+      disableBeaconVerification: false,
+      noCache: false,
+    });
+
+    // Важно: запускаем клиент, чтобы он в фоне пинговал ноды и знал, какая быстрее
+    this.client.start();
+  }
+
+  currentRound(): number {
+    return Math.floor((Date.now() - GENESIS_MS) / PERIOD_MS) + 1;
   }
 
   async getOtp(round?: number): Promise<[Uint8Array, number]> {
-    const {
-      baseUrl = 'https://api.drand.sh',
-      beaconId = 'quicknet',
-      timeoutMs = 8_000,
-    } = this.opts;
+    const target = round ?? this.currentRound();
 
-    const path =
-      round === undefined
-        ? `/v2/beacons/${beaconId}/rounds/latest` // v2 latest [web:146]
-        : `/v2/beacons/${beaconId}/rounds/${round}`; // v2 конкретный round [web:135]
+    try {
+      // 1. запрос к самой быстрой ноде
+      // 2. Криптографическая проверка BLS-подпись
+      // 3. Get randomness из подписи
+      const beacon = await this.client.get(target);
 
-    const entry = await getJson<DrandV2Round>(baseUrl, path, timeoutMs);
-    const randomness = randomnessFromSignatureHex(entry.signature);
+      return [hexToBytes(beacon.randomness), beacon.round];
+    } catch (error) {
+      if (round !== undefined) throw error;
 
-    return [randomness, entry.round];
+      // Если мы сами вычислили currentRound и поймали ошибку
+      // (скорее всего 404 от CDN на границе 30-секундного окна) — откатываемся назад
+      const fallbackBeacon = await this.client.get(target - 1);
+      return [hexToBytes(fallbackBeacon.randomness), fallbackBeacon.round];
+    }
   }
-}
 
-function randomnessFromSignatureHex(signatureHex: string): Uint8Array {
-  const clean = signatureHex.startsWith('0x') ? signatureHex.slice(2) : signatureHex;
-  return sha256(hexToBytes(clean));
-}
-
-async function getJson<T>(baseUrl: string, path: string, timeoutMs: number): Promise<T> {
-  const url = new URL(path, baseUrl).toString();
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: { accept: 'application/json' },
-      signal: ac.signal,
-    });
-    if (!res.ok) throw new Error(`drand HTTP ${res.status}: ${await res.text()}`);
-    return (await res.json()) as T;
-  } finally {
-    clearTimeout(t);
+  // Вызови этот метод при остановке приложения (graceful shutdown),
+  // чтобы остановить фоновые проверки таймеров FastestNodeClient
+  stop() {
+    this.client.stop();
   }
 }

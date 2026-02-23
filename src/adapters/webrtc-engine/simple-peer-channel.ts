@@ -1,37 +1,151 @@
+import type { Instance as PeerInstance } from 'simple-peer';
 import type { P2pChannel } from '../../bll/ports/p2p-channel';
 
-const encoder = new TextEncoder();
+type PeerWritableLike = {
+  write(chunk: Uint8Array, cb?: (err?: unknown) => void): boolean | void;
+  on(event: 'data', cb: (data: unknown) => void): void;
+  on(event: 'error', cb: (err: unknown) => void): void;
+  on(event: 'close', cb: () => void): void;
 
-type PeerInstance = import('simple-peer').Instance;
+  removeListener(event: 'data', cb: (data: unknown) => void): void;
+  removeListener(event: 'error', cb: (err: unknown) => void): void;
+  removeListener(event: 'close', cb: () => void): void;
 
-function toUint8(data: unknown): Uint8Array {
+  destroy(err?: unknown): void;
+};
+
+function normalizeIncomingData(data: unknown): Uint8Array {
   if (data instanceof Uint8Array) return data;
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  throw new Error(`Unsupported incoming data type: ${Object.prototype.toString.call(data)}`);
+}
 
-  if (typeof data === 'string') return encoder.encode(data);
-
-  // simple-peer может эмитить Object, если пришла JSON-строка
-  return encoder.encode(JSON.stringify(data));
+function asPeerWritable(peer: PeerInstance): PeerWritableLike {
+  return peer as unknown as PeerWritableLike;
 }
 
 export class SimplePeerChannel implements P2pChannel {
-  private readonly peer: PeerInstance;
+  readonly readable: ReadableStream<Uint8Array>;
+  readonly writable: WritableStream<Uint8Array>;
+
+  private readonly peer: PeerWritableLike;
+
+  private readonly closeSubs = new Set<() => void>();
+  private closed = false;
+
+  private rsCleanup?: () => void;
 
   constructor(peer: PeerInstance) {
-    this.peer = peer;
+    this.peer = asPeerWritable(peer);
+
+    const onClosed = () => this.fireClosed();
+    this.peer.on('close', onClosed);
+    this.peer.on('error', onClosed);
+
+    this.readable = new ReadableStream<Uint8Array>({
+      start: (controller) => {
+        let ended = false;
+
+        const safeClose = () => {
+          if (ended) return;
+          ended = true;
+          try {
+            controller.close();
+          } catch {}
+        };
+
+        const safeError = (err: unknown) => {
+          if (ended) return;
+          ended = true;
+          try {
+            controller.error(err instanceof Error ? err : new Error(String(err)));
+          } catch {}
+        };
+
+        const onData = (d: unknown) => {
+          try {
+            controller.enqueue(normalizeIncomingData(d));
+          } catch (e) {
+            safeError(e);
+          }
+        };
+
+        const onClose = () => safeClose();
+        const onError = (e: unknown) => safeError(e);
+
+        this.peer.on('data', onData);
+        this.peer.on('close', onClose);
+        this.peer.on('error', onError);
+
+        this.rsCleanup = () => {
+          this.peer.removeListener('data', onData);
+          this.peer.removeListener('close', onClose);
+          this.peer.removeListener('error', onError);
+        };
+      },
+      cancel: () => {
+        try {
+          this.rsCleanup?.();
+        } catch {}
+      },
+    });
+
+    this.writable = new WritableStream<Uint8Array>({
+      write: (chunk) => {
+        if (this.closed) return Promise.reject(new Error('channel closed'));
+
+        return new Promise<void>((resolve, reject) => {
+          try {
+            this.peer.write(chunk, (err?: unknown) => {
+              if (err) reject(err instanceof Error ? err : new Error(String(err)));
+              else resolve();
+            });
+          } catch (e) {
+            reject(e instanceof Error ? e : new Error(String(e)));
+          }
+        });
+      },
+      close: async () => {
+        // no-op: lifecycle управляется только channel.close()
+      },
+      abort: async () => {
+        // no-op
+      },
+    });
   }
 
-  send(data: Uint8Array): void {
-    this.peer.send(data);
+  close(): void {
+    if (this.closed) return;
+    try {
+      this.peer.destroy();
+    } finally {
+      this.fireClosed();
+    }
   }
 
-  onReceive(cb: (data: Uint8Array) => void): () => void {
-    const handler = (data: unknown) => cb(toUint8(data));
+  onClose(cb: () => void): () => void {
+    if (this.closed) {
+      queueMicrotask(cb);
+      return () => {};
+    }
+    this.closeSubs.add(cb);
+    return () => this.closeSubs.delete(cb);
+  }
 
-    this.peer.on('data', handler);
+  private fireClosed(): void {
+    if (this.closed) return;
+    this.closed = true;
 
-    return () => {
-      this.peer.removeListener('data', handler);
-    };
+    try {
+      this.rsCleanup?.();
+    } catch {}
+    this.rsCleanup = undefined;
+
+    for (const cb of this.closeSubs) {
+      try {
+        cb();
+      } catch {}
+    }
+    this.closeSubs.clear();
   }
 }
