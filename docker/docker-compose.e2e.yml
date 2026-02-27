@@ -14,8 +14,6 @@ services:
         condition: service_healthy
       web:
         condition: service_healthy
-      stun:
-        condition: service_started
   profiles: ['e2e']
   
 

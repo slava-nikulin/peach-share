@@ -1,5 +1,4 @@
-// src/adapters/kdf/argon2id.browser.ts
-import loadArgon2idWasm from 'argon2id';
+import { loadWasm as loadArgon2idWasm } from '../../argon2id.vite';
 import type { RoomIdKdfPort } from '../../bll/ports/room-id-kdf';
 
 export class Argon2idBrowserKdf implements RoomIdKdfPort {

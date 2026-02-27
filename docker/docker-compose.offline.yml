@@ -1,10 +1,4 @@
 services:
-  # stun:
-  #   profiles: ["offline"]
-  #   ports:
-  #     - "3478:3478/udp"
-  #     - "3478:3478/tcp"
-
   rtdb-emulator:
     profiles: ["offline"]
     # Для offline-режима обычно не нужно публиковать “сырые” порты эмуляторов наружу.
@@ -54,8 +48,6 @@ services:
     depends_on:
       rtdb-emulator:
         condition: service_healthy
-      # stun:
-      #   condition: service_started
 
   # Раздача rootCA клиентам: https://HOST/ca/peachshare-rootCA.crt
   ca:

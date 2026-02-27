@@ -56,16 +56,19 @@ class RoomPage extends Page {
     if (localPaths.length === 0) return;
 
     await this.waitForSessionReady();
-    const input = this.dropzone.$('input[type="file"]');
+    const inputSelector = '[data-testid="room-dropzone"] input[type="file"]';
+    const input = this.browser.$(inputSelector);
     await input.waitForExist({ timeout: 7000 });
+    await input.waitForEnabled({ timeout: 7000 });
 
     const remotePaths: string[] = [];
     for (const path of localPaths) {
       remotePaths.push(await this.browser.uploadFile(path));
     }
 
-    const inputRef = input;
-    await this.browser.execute((el: HTMLElement) => {
+    const wasShown = await this.browser.execute((selector: string) => {
+      const el = document.querySelector<HTMLElement>(selector);
+      if (!el) return false;
       el.classList.remove('hidden');
       el.style.display = 'block';
       el.style.visibility = 'visible';
@@ -77,23 +80,33 @@ class RoomPage extends Page {
       el.style.width = '1px';
       el.style.height = '1px';
       el.style.zIndex = '9999';
-    }, inputRef);
+      return true;
+    }, inputSelector);
 
-    await input.setValue(remotePaths.join('\n'));
+    if (!wasShown) {
+      throw new Error('file input not found in room dropzone');
+    }
 
-    await this.browser.execute((el: HTMLElement) => {
-      el.classList.add('hidden');
-      el.style.display = '';
-      el.style.visibility = '';
-      el.style.pointerEvents = '';
-      el.style.opacity = '';
-      el.style.position = '';
-      el.style.left = '';
-      el.style.top = '';
-      el.style.width = '';
-      el.style.height = '';
-      el.style.zIndex = '';
-    }, inputRef);
+    try {
+      const visibleInput = this.browser.$(inputSelector);
+      await visibleInput.setValue(remotePaths.join('\n'));
+    } finally {
+      await this.browser.execute((selector: string) => {
+        const el = document.querySelector<HTMLElement>(selector);
+        if (!el) return;
+        el.classList.add('hidden');
+        el.style.display = '';
+        el.style.visibility = '';
+        el.style.pointerEvents = '';
+        el.style.opacity = '';
+        el.style.position = '';
+        el.style.left = '';
+        el.style.top = '';
+        el.style.width = '';
+        el.style.height = '';
+        el.style.zIndex = '';
+      }, inputSelector);
+    }
   }
 
   public async waitForMyFile(fileName: string, timeout: number = 20_000): Promise<void> {
@@ -141,11 +154,17 @@ class RoomPage extends Page {
     const statusMark = `- ${status}`.toLowerCase();
     await this.browser.waitUntil(
       async () => {
-        const rows = this.transfersCard.$$('div.border-t');
-        if ((await rows.length) === 0) return false;
+        const rows = await this.transfersCard.$$('div.border-t');
+        if (rows.length === 0) return false;
 
         for (const row of rows) {
-          const text = (await row.getText()).toLowerCase();
+          if (!row) continue;
+          let text = '';
+          try {
+            text = (await row.getText()).toLowerCase();
+          } catch {
+            continue;
+          }
           if (
             text.includes(expectedDir) &&
             text.includes(expectedFileName) &&
