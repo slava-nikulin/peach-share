@@ -1,6 +1,6 @@
 import { hexToBytes } from '@noble/hashes/utils.js';
 import { FastestNodeClient } from 'drand-client';
-import type { OtpClientPort } from '../bll/ports/otp-client';
+import type { OtpClientPort } from '../../bll/ports/otp-client';
 
 // Параметры сети 'default' (именно она дает окна по 30 секунд)
 const GENESIS_MS = 1595431050_000;

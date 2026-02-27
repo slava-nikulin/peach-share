@@ -20,7 +20,10 @@ export function RoomErrorState(props: { title: string; message: string }): JSX.E
             </div>
           </div>
 
-          <p class="mt-1 text-slate-600 text-sm" data-testid="room-error-message">
+          <p
+            class="mt-1 whitespace-pre-wrap break-all text-slate-600 text-sm"
+            data-testid="room-error-message"
+          >
             {props.message}
           </p>
         </div>

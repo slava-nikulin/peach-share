@@ -28,14 +28,71 @@ export function Room(): JSX.Element {
   const [errorText, setErrorText] = createSignal<string>('');
   const [errorTitle, setErrorTitle] = createSignal<string>('');
 
-  const asMessage = (err: unknown): string => {
-    if (err instanceof Error) return err.message;
-    if (typeof err === 'string') return err;
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null;
+
+  const asDebugJson = (value: unknown): string => {
+    const seen = new WeakSet<object>();
     try {
-      return JSON.stringify(err);
+      return JSON.stringify(
+        value,
+        (_key, currentValue) => {
+          if (typeof currentValue === 'bigint') return `${currentValue}n`;
+
+          if (typeof currentValue === 'object' && currentValue !== null) {
+            if (seen.has(currentValue)) return '[Circular]';
+            seen.add(currentValue);
+          }
+
+          return currentValue;
+        },
+        2,
+      );
     } catch {
-      return String(err);
+      return String(value);
     }
+  };
+
+  const buildOperationFailureText = (err: unknown): string => {
+    const errorName = err instanceof Error ? err.name : typeof err;
+    const errorMessage =
+      err instanceof Error
+        ? err.message
+        : typeof err === 'string'
+          ? err
+          : isRecord(err) && typeof err.message === 'string'
+            ? err.message
+            : 'N/A';
+    const errorCode = isRecord(err) && err.code !== undefined ? String(err.code) : 'N/A';
+    const errorCause = isRecord(err) && err.cause !== undefined ? asDebugJson(err.cause) : 'N/A';
+    const errorStack = err instanceof Error && err.stack ? err.stack : 'N/A';
+
+    const context = {
+      time: new Date().toISOString(),
+      href: window.location.href,
+      routeRoomId: params.id ?? null,
+      navState: location.state ?? null,
+      online: navigator.onLine,
+      userAgent: navigator.userAgent,
+    };
+
+    return [
+      'The room could not be started.',
+      '',
+      `Error name: ${errorName}`,
+      `Error message: ${errorMessage}`,
+      `Error code: ${errorCode}`,
+      `Error cause: ${errorCause}`,
+      '',
+      'Stack:',
+      errorStack,
+      '',
+      'Raw error:',
+      asDebugJson(err),
+      '',
+      'Context:',
+      asDebugJson(context),
+    ].join('\n');
   };
 
   const showError = (kind: RoomErrorKind, err?: unknown) => {
@@ -59,8 +116,7 @@ export function Room(): JSX.Element {
 
     // operation_failed
     setErrorTitle('Failed to start room');
-    const details = err ? asMessage(err) : 'Unknown error';
-    setErrorText(`The room could not be started. Details: ${details}`);
+    setErrorText(buildOperationFailureText(err));
     setView('error');
   };
 

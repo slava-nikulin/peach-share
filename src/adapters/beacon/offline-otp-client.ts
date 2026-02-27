@@ -1,9 +1,6 @@
-const MAX_ROUNDS_DEFAULT = 3;
+import type { OtpClientPort } from '../../bll/ports/otp-client';
 
-export interface OtpClientPort {
-  currentRound(): number;
-  getOtp(requestedRound: number): Promise<[otp: Uint8Array, resolvedRound: number]>;
-}
+const MAX_ROUNDS_DEFAULT = 3;
 
 async function sha256Bytes(msg: string): Promise<Uint8Array> {
   const enc = new TextEncoder();
@@ -19,7 +16,11 @@ async function sha256Bytes(msg: string): Promise<Uint8Array> {
 }
 
 export class OfflineOtpClient implements OtpClientPort {
-  constructor(private readonly rounds: number = MAX_ROUNDS_DEFAULT) {}
+  private readonly rounds: number;
+
+  constructor(rounds: number = MAX_ROUNDS_DEFAULT) {
+    this.rounds = rounds;
+  }
 
   currentRound(): number {
     // UseCase возьмёт current, current-1, current-2 (и отфильтрует > 0)

@@ -1,13 +1,13 @@
 import type { ControlMsgWithoutProtocol } from './protocol';
 import type { NegotiatedSessionSettings } from './session-negotiation';
-import { TransferTimeoutManager, type OutgoingTimeoutState } from './transfer-timeout-manager';
+import { createTransferException, transferErrorCode } from './transfer-errors';
 import {
   createTransferHashAccumulator,
   finalizeTransferHashAccumulator,
   type TransferHashAccumulator,
   updateTransferHashAccumulator,
 } from './transfer-hash';
-import { createTransferException, transferErrorCode } from './transfer-errors';
+import { type OutgoingTimeoutState, TransferTimeoutManager } from './transfer-timeout-manager';
 import type {
   SessionErrorCode,
   SessionState,
@@ -64,16 +64,17 @@ type OutgoingTransferManagerDeps = {
 };
 
 export class OutgoingTransferManager {
+  private readonly cfg: OutgoingTransferManagerConfig;
+  private readonly deps: OutgoingTransferManagerDeps;
   private readonly transferTimeouts: TransferTimeoutManager;
   private readonly outgoing = new Map<string, OutgoingTransfer>();
   private readonly pendingOutgoingQueue: PendingOutgoingRequest[] = [];
   private readonly pendingOutgoingById = new Map<string, PendingOutgoingRequest>();
   private activeOutgoingCount = 0;
 
-  constructor(
-    private readonly cfg: OutgoingTransferManagerConfig,
-    private readonly deps: OutgoingTransferManagerDeps,
-  ) {
+  constructor(cfg: OutgoingTransferManagerConfig, deps: OutgoingTransferManagerDeps) {
+    this.cfg = cfg;
+    this.deps = deps;
     this.transferTimeouts = new TransferTimeoutManager({
       metaTimeoutMs: 1,
       idleTimeoutMs: cfg.idleTimeoutMs,
@@ -139,11 +140,7 @@ export class OutgoingTransferManager {
     return true;
   }
 
-  cancelTransferById(
-    transferId: string,
-    reason: TransferCancelReason,
-    message: string,
-  ): boolean {
+  cancelTransferById(transferId: string, reason: TransferCancelReason, message: string): boolean {
     let affected = false;
 
     const transfer = this.outgoing.get(transferId);

@@ -1,5 +1,5 @@
 import type { ControlMsgWithoutProtocol, FileMetaMsg } from './protocol';
-import { TransferTimeoutManager, type IncomingTimeoutState } from './transfer-timeout-manager';
+import { createTransferException, transferErrorCode } from './transfer-errors';
 import {
   createTransferHashAccumulator,
   finalizeTransferHashAccumulator,
@@ -9,7 +9,7 @@ import {
   type TransferHashAccumulator,
   updateTransferHashAccumulator,
 } from './transfer-hash';
-import { createTransferException, transferErrorCode } from './transfer-errors';
+import { type IncomingTimeoutState, TransferTimeoutManager } from './transfer-timeout-manager';
 import type {
   DownloadToSinkHandle,
   FileDesc,
@@ -70,11 +70,12 @@ export class IncomingTransferManager {
   private readonly transferTimeouts: TransferTimeoutManager;
   private readonly incoming = new Map<string, IncomingTransfer>();
   private totalBufferedIncomingBytes = 0;
+  private readonly cfg: IncomingTransferManagerConfig;
+  private readonly deps: IncomingTransferManagerDeps;
 
-  constructor(
-    private readonly cfg: IncomingTransferManagerConfig,
-    private readonly deps: IncomingTransferManagerDeps,
-  ) {
+  constructor(cfg: IncomingTransferManagerConfig, deps: IncomingTransferManagerDeps) {
+    this.cfg = cfg;
+    this.deps = deps;
     this.transferTimeouts = new TransferTimeoutManager({
       metaTimeoutMs: cfg.metaTimeoutMs,
       idleTimeoutMs: cfg.idleTimeoutMs,
@@ -100,7 +101,9 @@ export class IncomingTransferManager {
     if (!peerFile) {
       return {
         transferId,
-        done: Promise.reject(createTransferException('NOT_FOUND', 'file not found in peer inventory')),
+        done: Promise.reject(
+          createTransferException('NOT_FOUND', 'file not found in peer inventory'),
+        ),
         cancel: noop,
       };
     }
@@ -138,7 +141,9 @@ export class IncomingTransferManager {
     } catch (error) {
       return {
         transferId,
-        done: Promise.reject(createTransferException('SINK_WRITE_FAILED', 'failed to acquire sink writer', error)),
+        done: Promise.reject(
+          createTransferException('SINK_WRITE_FAILED', 'failed to acquire sink writer', error),
+        ),
         cancel: noop,
       };
     }
@@ -184,7 +189,13 @@ export class IncomingTransferManager {
     });
 
     void this.deps.sendControl({ t: 'GET_FILE', transferId, fileId }).catch((error) => {
-      this.failIncomingTransfer(transfer, 'RECV_FAILED', 'Failed to request file from peer', error, false);
+      this.failIncomingTransfer(
+        transfer,
+        'RECV_FAILED',
+        'Failed to request file from peer',
+        error,
+        false,
+      );
     });
 
     return {
@@ -201,12 +212,24 @@ export class IncomingTransferManager {
     if (!transfer || !this.isIncomingActive(transfer)) return;
 
     if (meta.id !== transfer.fileId) {
-      this.failIncomingTransfer(transfer, 'FILE_ID_MISMATCH', 'file id mismatch in FILE_META', undefined, true);
+      this.failIncomingTransfer(
+        transfer,
+        'FILE_ID_MISMATCH',
+        'file id mismatch in FILE_META',
+        undefined,
+        true,
+      );
       return;
     }
 
     if (!Number.isFinite(meta.size) || meta.size < 0) {
-      this.failIncomingTransfer(transfer, 'PROTOCOL_VIOLATION', 'invalid file size in FILE_META', undefined, true);
+      this.failIncomingTransfer(
+        transfer,
+        'PROTOCOL_VIOLATION',
+        'invalid file size in FILE_META',
+        undefined,
+        true,
+      );
       return;
     }
 
@@ -273,7 +296,13 @@ export class IncomingTransferManager {
     if (!transfer || !this.isIncomingActive(transfer)) return;
 
     if (transfer.state === 'awaiting_meta') {
-      this.failIncomingTransfer(transfer, 'PROTOCOL_VIOLATION', 'received DATA before FILE_META', undefined, true);
+      this.failIncomingTransfer(
+        transfer,
+        'PROTOCOL_VIOLATION',
+        'received DATA before FILE_META',
+        undefined,
+        true,
+      );
       return;
     }
 
@@ -282,7 +311,13 @@ export class IncomingTransferManager {
     }
 
     if (seq > transfer.expectedSeq) {
-      this.failIncomingTransfer(transfer, 'OUT_OF_ORDER', 'out-of-order DATA frame sequence', undefined, true);
+      this.failIncomingTransfer(
+        transfer,
+        'OUT_OF_ORDER',
+        'out-of-order DATA frame sequence',
+        undefined,
+        true,
+      );
       return;
     }
 
@@ -450,12 +485,24 @@ export class IncomingTransferManager {
   private verifyIncomingTransferHash(transfer: IncomingTransfer): boolean {
     const endHash = transfer.endHash;
     if (!endHash) {
-      this.failIncomingTransfer(transfer, 'PROTOCOL_VIOLATION', 'missing FILE_END hash', undefined, true);
+      this.failIncomingTransfer(
+        transfer,
+        'PROTOCOL_VIOLATION',
+        'missing FILE_END hash',
+        undefined,
+        true,
+      );
       return false;
     }
 
     if (!isValidSha256Hex(endHash.value)) {
-      this.failIncomingTransfer(transfer, 'PROTOCOL_VIOLATION', 'invalid SHA-256 hash format in FILE_END', undefined, true);
+      this.failIncomingTransfer(
+        transfer,
+        'PROTOCOL_VIOLATION',
+        'invalid SHA-256 hash format in FILE_END',
+        undefined,
+        true,
+      );
       return false;
     }
 

@@ -23,7 +23,9 @@ class RoomPage extends Page {
   }
 
   private get transfersCard(): ChainablePromiseElement {
-    return this.browser.$('//div[contains(@class,"rounded-2xl")][.//div[normalize-space()="Transfers"]]');
+    return this.browser.$(
+      '//div[contains(@class,"rounded-2xl")][.//div[normalize-space()="Transfers"]]',
+    );
   }
 
   private sectionRoot(section: 'You' | 'Guest'): ChainablePromiseElement {
@@ -42,9 +44,12 @@ class RoomPage extends Page {
   public async waitForSessionReady(): Promise<void> {
     await this.waitForContent();
     await this.sessionStateLabel.waitForDisplayed({ timeout: 7000 });
-    await this.browser.waitUntil(async () => {
-      return (await this.sessionStateLabel.getText()).trim() === 'Session: Ready';
-    }, { timeout: 20_000, timeoutMsg: 'room session did not become ready' });
+    await this.browser.waitUntil(
+      async () => {
+        return (await this.sessionStateLabel.getText()).trim() === 'Session: Ready';
+      },
+      { timeout: 20_000, timeoutMsg: 'room session did not become ready' },
+    );
   }
 
   public async uploadFiles(localPaths: readonly string[]): Promise<void> {
@@ -59,7 +64,7 @@ class RoomPage extends Page {
       remotePaths.push(await this.browser.uploadFile(path));
     }
 
-    const inputRef = await input;
+    const inputRef = input;
     await this.browser.execute((el: HTMLElement) => {
       el.classList.remove('hidden');
       el.style.display = 'block';
@@ -134,25 +139,28 @@ class RoomPage extends Page {
     const expectedDir = dir.toLowerCase();
     const expectedFileName = fileName.toLowerCase();
     const statusMark = `- ${status}`.toLowerCase();
-    await this.browser.waitUntil(async () => {
-      const rows = await this.transfersCard.$$('div.border-t');
-      if (rows.length === 0) return false;
+    await this.browser.waitUntil(
+      async () => {
+        const rows = this.transfersCard.$$('div.border-t');
+        if ((await rows.length) === 0) return false;
 
-      for (const row of rows) {
-        const text = (await row.getText()).toLowerCase();
-        if (
-          text.includes(expectedDir) &&
-          text.includes(expectedFileName) &&
-          text.includes(statusMark)
-        ) {
-          return true;
+        for (const row of rows) {
+          const text = (await row.getText()).toLowerCase();
+          if (
+            text.includes(expectedDir) &&
+            text.includes(expectedFileName) &&
+            text.includes(statusMark)
+          ) {
+            return true;
+          }
         }
-      }
-      return false;
-    }, {
-      timeout,
-      timeoutMsg: `transfer ${dir}/${fileName} did not reach status "${status}"`,
-    });
+        return false;
+      },
+      {
+        timeout,
+        timeoutMsg: `transfer ${dir}/${fileName} did not reach status "${status}"`,
+      },
+    );
   }
 
   private async waitForFileInSection(
@@ -161,9 +169,12 @@ class RoomPage extends Page {
     timeout: number,
   ): Promise<void> {
     await this.sectionRoot(section).waitForDisplayed({ timeout: 7000 });
-    await this.browser.waitUntil(async () => {
-      return this.sectionFileRow(section, fileName).isExisting();
-    }, { timeout, timeoutMsg: `${section} section does not contain "${fileName}"` });
+    await this.browser.waitUntil(
+      async () => {
+        return this.sectionFileRow(section, fileName).isExisting();
+      },
+      { timeout, timeoutMsg: `${section} section does not contain "${fileName}"` },
+    );
   }
 
   private async waitForFileAbsentInSection(
@@ -172,9 +183,12 @@ class RoomPage extends Page {
     timeout: number,
   ): Promise<void> {
     await this.sectionRoot(section).waitForDisplayed({ timeout: 7000 });
-    await this.browser.waitUntil(async () => {
-      return !(await this.sectionFileRow(section, fileName).isExisting());
-    }, { timeout, timeoutMsg: `${section} section still contains "${fileName}"` });
+    await this.browser.waitUntil(
+      async () => {
+        return !(await this.sectionFileRow(section, fileName).isExisting());
+      },
+      { timeout, timeoutMsg: `${section} section still contains "${fileName}"` },
+    );
   }
 
   private get errorRoot(): ChainablePromiseElement {
