@@ -22,7 +22,7 @@ export async function createEmulatorRtdbConnection(
   const app = getOrInitApp(cfg.app);
 
   const auth = initializeAuth(app, { persistence: inMemoryPersistence });
-  connectAuthEmulator(auth, `http://${emulator.host}:${emulator.authPort}`, {
+  connectAuthEmulator(auth, `${emulator.protocol}//${emulator.host}:${emulator.authPort}`, {
     disableWarnings: true,
   });
 
@@ -69,14 +69,12 @@ function setWebSocketsOnly(): void {
   }
 }
 
-function forceSecureRepo(db: Database): void {
-  type RepoInfoCarrier = Database & { _repo?: { repoInfo_?: { secure?: boolean } } };
+export function forceSecureRepo(db: Database): void {
+  const anyDb = db as any;
+  const repo = anyDb._repo ?? anyDb.repo_;
+  const repoInfo = repo?.repoInfo_ ?? repo?.repoInfo;
 
-  try {
-    const candidate = db as RepoInfoCarrier;
-    const repoInfo = candidate._repo?.repoInfo_;
-    if (repoInfo) repoInfo.secure = true;
-  } catch (e) {
-    console.warn('[FirebaseRTDB] forceSecureRepo failed:', e);
+  if (repoInfo && typeof repoInfo.secure === 'boolean') {
+    repoInfo.secure = true;
   }
 }

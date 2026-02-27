@@ -1,5 +1,6 @@
 import type { P2pChannel } from '../../../bll/ports/p2p-channel';
 import { FileExchangeSessionBuilder } from './file-exchange/session-builder';
+import type { FileExchangeConfig } from './file-exchange/session-config';
 import type {
   FileDesc as ExchangeFileDesc,
   SessionError,
@@ -7,6 +8,10 @@ import type {
 } from './file-exchange/types';
 
 type TransferDir = 'send' | 'recv';
+type SessionNoticeScope = 'session' | 'transfer';
+type SessionNoticeCode = SessionError['code'] | 'NOT_FOUND' | 'INTERNAL_ERROR';
+
+export type RoomSessionStatus = 'connecting' | 'ready' | 'error' | 'closed';
 
 export interface FileDesc {
   id: string;
@@ -16,20 +21,49 @@ export interface FileDesc {
 }
 
 export interface TransferState {
+  transferId: string;
   fileId: string;
   dir: TransferDir;
   percentage: number;
   bytes: number;
+  totalBytes: number;
   status: 'preparing' | 'active' | 'done' | 'cancelled' | 'error';
   error?: string;
 }
 
+export interface SessionNotice {
+  scope: SessionNoticeScope;
+  code: SessionNoticeCode;
+  message: string;
+  fatal: boolean;
+  transferId?: string;
+}
+
 export interface RoomSession {
   addMyFiles(files: FileList): Promise<void>;
-  unshare(fileId: string): void;
-  requestDownload(fileId: string): void;
+  unshare(fileId: string): boolean;
+  requestDownload(fileId: string): Promise<void>;
+  cancelTransfer(transferId: string): void;
   dispose(): void;
 }
+
+const ROOM_FILE_EXCHANGE_CONFIG: FileExchangeConfig = {
+  controlMaxBytes: 32 * 1024,
+  fileChunkBytes: 64 * 1024,
+  inventoryResendIntervalMs: 10_000,
+
+  maxConcurrentOutgoingTransfers: 2,
+  maxConcurrentIncomingTransfers: 2,
+
+  maxFileBytes: 128 * 1024 * 1024,
+  maxBufferedIncomingBytes: 32 * 1024 * 1024,
+
+  metaTimeoutMs: 15_000,
+  idleTimeoutMs: 180_000,
+  hardTimeoutMs: 60 * 60 * 1000,
+
+  closeOnProtocolViolation: true,
+};
 
 export function createRoomSession(params: {
   channel: P2pChannel;
@@ -39,7 +73,9 @@ export function createRoomSession(params: {
   getPeerFiles: () => FileDesc[];
   setTransfers: (v: TransferState[]) => void;
   getTransfers: () => TransferState[];
-  onDownloadedFile: (file: File) => void;
+  setSessionStatus: (v: RoomSessionStatus) => void;
+  setReadOnly: (v: boolean) => void;
+  setSessionNotice: (v: SessionNotice | null) => void;
 }): RoomSession {
   const {
     channel,
@@ -49,26 +85,69 @@ export function createRoomSession(params: {
     getPeerFiles,
     setTransfers,
     getTransfers,
-    onDownloadedFile,
+    setSessionStatus,
+    setReadOnly,
+    setSessionNotice,
   } = params;
 
-  const fxSession = new FileExchangeSessionBuilder(channel).build();
+  const fxSession = new FileExchangeSessionBuilder(channel, ROOM_FILE_EXCHANGE_CONFIG).build();
   const transferContext = new Map<string, { fileId: string; dir: TransferDir }>();
+  let hasFatalSessionError = false;
+
+  setSessionStatus('connecting');
+  setReadOnly(true);
+  setSessionNotice(null);
+
+  const syncSessionState = (): void => {
+    if (fxSession.state() === 'closed') {
+      setSessionStatus('closed');
+      setReadOnly(true);
+      return;
+    }
+
+    if (hasFatalSessionError) {
+      setSessionStatus('error');
+      setReadOnly(true);
+      return;
+    }
+
+    setSessionStatus('ready');
+    setReadOnly(false);
+  };
+
+  const publishNotice = (
+    scope: SessionNoticeScope,
+    code: SessionNoticeCode,
+    message: string,
+    fatal: boolean,
+    transferId?: string,
+  ): void => {
+    setSessionNotice({
+      scope,
+      code,
+      message,
+      fatal,
+      transferId,
+    });
+  };
 
   const upsertTransfer = (
-    patch: Partial<TransferState> & Pick<TransferState, 'fileId' | 'dir'>,
+    patch: Partial<TransferState> & Pick<TransferState, 'transferId' | 'fileId' | 'dir'>,
   ): void => {
     const current = getTransfers().slice();
-    const index = current.findIndex((item) => item.fileId === patch.fileId && item.dir === patch.dir);
+    const index = current.findIndex((item) => item.transferId === patch.transferId);
 
     const previous = index >= 0 ? current[index] : null;
+    const hasErrorPatch = 'error' in patch;
     const next: TransferState = {
+      transferId: patch.transferId,
       fileId: patch.fileId,
       dir: patch.dir,
       percentage: patch.percentage ?? previous?.percentage ?? 0,
       bytes: patch.bytes ?? previous?.bytes ?? 0,
+      totalBytes: patch.totalBytes ?? previous?.totalBytes ?? 0,
       status: patch.status ?? previous?.status ?? 'preparing',
-      error: patch.error ?? previous?.error,
+      error: hasErrorPatch ? patch.error : previous?.error,
     };
 
     if (index >= 0) {
@@ -77,11 +156,25 @@ export function createRoomSession(params: {
       current.push(next);
     }
 
+    transferContext.set(patch.transferId, { fileId: patch.fileId, dir: patch.dir });
     setTransfers(current);
   };
 
-  const markTransferError = (context: { fileId: string; dir: TransferDir }, error: unknown): void => {
+  const markTransferErrorById = (transferId: string, error: unknown): void => {
+    const existing = getTransfers().find((item) => item.transferId === transferId);
+    const context =
+      transferContext.get(transferId) ??
+      (existing
+        ? {
+            fileId: existing.fileId,
+            dir: existing.dir,
+          }
+        : null);
+
+    if (!context) return;
+
     upsertTransfer({
+      transferId,
       fileId: context.fileId,
       dir: context.dir,
       status: 'error',
@@ -94,13 +187,18 @@ export function createRoomSession(params: {
       fileId: event.fileId,
       dir: event.dir === 'send' ? 'send' : 'recv',
     };
+    const done = Math.max(0, event.done);
+    const total = Math.max(0, event.total);
+    const percentage = total > 0 ? Math.min(100, (done / total) * 100) : 0;
 
     if (event.status === 'completed') {
       upsertTransfer({
+        transferId: event.transferId,
         fileId: context.fileId,
         dir: context.dir,
         status: 'done',
-        bytes: event.done,
+        bytes: done,
+        totalBytes: total,
         percentage: 100,
         error: undefined,
       });
@@ -110,11 +208,13 @@ export function createRoomSession(params: {
 
     if (event.status === 'cancelled') {
       upsertTransfer({
+        transferId: event.transferId,
         fileId: context.fileId,
         dir: context.dir,
         status: 'cancelled',
-        bytes: event.done,
-        percentage: event.total > 0 ? Math.min(100, (event.done / event.total) * 100) : 0,
+        bytes: done,
+        totalBytes: total,
+        percentage,
         error: undefined,
       });
       transferContext.delete(event.transferId);
@@ -122,15 +222,21 @@ export function createRoomSession(params: {
     }
 
     upsertTransfer({
+      transferId: event.transferId,
       fileId: context.fileId,
       dir: context.dir,
       status: 'error',
-      bytes: event.done,
-      percentage: event.total > 0 ? Math.min(100, (event.done / event.total) * 100) : 0,
+      bytes: done,
+      totalBytes: total,
+      percentage,
       error: `${event.code}: ${event.message}`,
     });
     transferContext.delete(event.transferId);
   };
+
+  const unsubState = fxSession.onStateChanged(() => {
+    syncSessionState();
+  });
 
   const unsubLocal = fxSession.onLocalFilesChanged((files) => {
     setMyFiles(files.map(toUiFileDesc));
@@ -142,7 +248,6 @@ export function createRoomSession(params: {
 
   const unsubProgress = fxSession.onTransferProgress((progress) => {
     const dir: TransferDir = progress.dir === 'send' ? 'send' : 'recv';
-    transferContext.set(progress.transferId, { fileId: progress.fileId, dir });
 
     const done = Math.max(0, progress.done);
     const total = Math.max(0, progress.total);
@@ -151,9 +256,11 @@ export function createRoomSession(params: {
     const status: TransferState['status'] = done > 0 ? 'active' : 'preparing';
 
     upsertTransfer({
+      transferId: progress.transferId,
       fileId: progress.fileId,
       dir,
       bytes: done,
+      totalBytes: total,
       percentage,
       status,
       error: undefined,
@@ -166,44 +273,69 @@ export function createRoomSession(params: {
 
   const unsubError = fxSession.onError((error) => {
     if (error.scope === 'transfer' && error.transferId) {
-      const context = transferContext.get(error.transferId);
-      if (context) {
-        markTransferError(context, `${error.code}: ${error.message}`);
-      }
+      markTransferErrorById(error.transferId, `${error.code}: ${error.message}`);
+      publishNotice(
+        'transfer',
+        normalizeNoticeCode(error),
+        `${error.code}: ${error.message}`,
+        false,
+        error.transferId,
+      );
       return;
     }
 
-    const _unused = error as SessionError;
-    void _unused;
+    const fatal = isFatalSessionError(error);
+    if (fatal) {
+      hasFatalSessionError = true;
+    }
+
+    publishNotice('session', normalizeNoticeCode(error), `${error.code}: ${error.message}`, fatal);
+    syncSessionState();
   });
+
+  syncSessionState();
 
   return {
     async addMyFiles(files: FileList): Promise<void> {
-      await fxSession.addLocal(files);
-      if (getMyFiles().length === 0) {
-        setMyFiles(fxSession.localFiles().map(toUiFileDesc));
+      try {
+        await fxSession.addLocal(files);
+        if (getMyFiles().length === 0) {
+          setMyFiles(fxSession.localFiles().map(toUiFileDesc));
+        }
+      } catch (error) {
+        publishNotice('session', normalizeUnknownErrorCode(error), errorMessage(error), false);
+        throw error;
       }
     },
 
-    unshare(fileId: string): void {
+    unshare(fileId: string): boolean {
+      const exists = getMyFiles().some((file) => file.id === fileId);
+      if (!exists) return false;
       fxSession.unshare(fileId);
+      return true;
     },
 
-    requestDownload(fileId: string): void {
+    async requestDownload(fileId: string): Promise<void> {
       const requested = getPeerFiles().find((file) => file.id === fileId);
-      if (!requested) return;
-
-      upsertTransfer({ fileId, dir: 'recv', status: 'preparing', percentage: 0, bytes: 0 });
-
-      if (canUseFileSystemSink()) {
-        void startStreamingDownloadToFile(fileId, requested);
+      if (!requested) {
+        publishNotice(
+          'transfer',
+          'NOT_FOUND',
+          'File is no longer available in peer inventory.',
+          false,
+        );
         return;
       }
 
-      startMemoryDownload(fileId, requested);
+      await startBlobDownload(fileId, requested);
+    },
+
+    cancelTransfer(transferId: string): void {
+      fxSession.cancelTransfer(transferId);
     },
 
     dispose(): void {
+      unsubState();
       unsubLocal();
       unsubPeer();
       unsubProgress();
@@ -214,52 +346,35 @@ export function createRoomSession(params: {
     },
   };
 
-  function startMemoryDownload(fileId: string, requested: FileDesc): void {
+  async function startBlobDownload(fileId: string, requested: FileDesc): Promise<void> {
     const handle = fxSession.requestDownload(fileId);
-    transferContext.set(handle.transferId, { fileId, dir: 'recv' });
+    upsertTransfer({
+      transferId: handle.transferId,
+      fileId,
+      dir: 'recv',
+      status: 'preparing',
+      percentage: 0,
+      bytes: 0,
+      totalBytes: requested.size,
+      error: undefined,
+    });
 
-    void handle.result
-      .then((blob) => {
-        const peerMeta = getPeerFiles().find((file) => file.id === fileId);
-        const fileName = peerMeta?.name || requested.name || `download-${fileId}`;
-        const fileMime = blob.type || peerMeta?.mime || 'application/octet-stream';
-
-        const downloaded = new File([blob], fileName, {
-          type: fileMime,
-          lastModified: Date.now(),
-        });
-
-        onDownloadedFile(downloaded);
-      })
-      .catch((error) => {
-        const context = transferContext.get(handle.transferId) ?? { fileId, dir: 'recv' as const };
-        markTransferError(context, error);
-      });
-  }
-
-  async function startStreamingDownloadToFile(fileId: string, requested: FileDesc): Promise<void> {
     try {
-      const sink = await createFileDownloadSink(requested.name, requested.mime);
-      const handle = fxSession.requestDownloadTo(fileId, sink);
-      transferContext.set(handle.transferId, { fileId, dir: 'recv' });
-      await handle.done;
+      const blob = await handle.result;
+      const peerMeta = getPeerFiles().find((file) => file.id === fileId);
+      const fileName = peerMeta?.name || requested.name || `download-${fileId}`;
+      const fileMime = blob.type || peerMeta?.mime || requested.mime || 'application/octet-stream';
+      triggerBrowserDownload(blob, fileName, fileMime);
     } catch (error) {
-      if (isAbortError(error)) {
-        upsertTransfer({
-          fileId,
-          dir: 'recv',
-          status: 'cancelled',
-          percentage: 0,
-          bytes: 0,
-          error: undefined,
-        });
-        return;
-      }
-
-      markTransferError({ fileId, dir: 'recv' }, error);
-
-      // Best effort fallback for browsers with partially supported FS APIs.
-      startMemoryDownload(fileId, requested);
+      markTransferErrorById(handle.transferId, error);
+      publishNotice(
+        'transfer',
+        normalizeUnknownErrorCode(error),
+        errorMessage(error),
+        false,
+        handle.transferId,
+      );
+      throw error;
     }
   }
 }
@@ -273,52 +388,17 @@ function toUiFileDesc(file: ExchangeFileDesc): FileDesc {
   };
 }
 
-function canUseFileSystemSink(): boolean {
-  if (typeof window === 'undefined') return false;
-  return typeof (window as Window & { showSaveFilePicker?: unknown }).showSaveFilePicker === 'function';
-}
-
-async function createFileDownloadSink(fileName: string, mime: string): Promise<WritableStream<Uint8Array>> {
-  const picker = (window as Window & {
-    showSaveFilePicker?: (opts: {
-      suggestedName: string;
-      types: Array<{ description: string; accept: Record<string, string[]> }>;
-    }) => Promise<{ createWritable: () => Promise<{ write: (data: Uint8Array) => Promise<void>; close: () => Promise<void>; abort: (reason?: unknown) => Promise<void> }> }>;
-  }).showSaveFilePicker;
-
-  if (!picker) {
-    throw new Error('File System Access API is not available');
-  }
-
-  const fileHandle = await picker({
-    suggestedName: fileName,
-    types: [
-      {
-        description: 'Downloaded file',
-        accept: {
-          [mime || 'application/octet-stream']: ['.*'],
-        },
-      },
-    ],
-  });
-
-  const writable = await fileHandle.createWritable();
-
-  return new WritableStream<Uint8Array>({
-    write(chunk): Promise<void> {
-      return writable.write(chunk);
-    },
-    close(): Promise<void> {
-      return writable.close();
-    },
-    abort(reason): Promise<void> {
-      return writable.abort(reason);
-    },
-  });
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError';
+function triggerBrowserDownload(blob: Blob, fileName: string, mime: string): void {
+  const payload = blob.type ? blob : new Blob([blob], { type: mime });
+  const objectUrl = URL.createObjectURL(payload);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = fileName;
+  link.rel = 'noopener';
+  link.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(objectUrl);
+  }, 30_000);
 }
 
 function errorMessage(error: unknown): string {
@@ -330,4 +410,29 @@ function errorMessage(error: unknown): string {
   } catch {
     return String(error);
   }
+}
+
+function normalizeNoticeCode(error: SessionError): SessionNoticeCode {
+  return error.code;
+}
+
+function normalizeUnknownErrorCode(error: unknown): SessionNoticeCode {
+  if (typeof error === 'object' && error != null) {
+    const maybeCode = (error as { code?: unknown }).code;
+    if (typeof maybeCode === 'string') {
+      return maybeCode as SessionNoticeCode;
+    }
+  }
+
+  return 'INTERNAL_ERROR';
+}
+
+function isFatalSessionError(error: SessionError): boolean {
+  if (error.scope !== 'session') return false;
+
+  if (error.code === 'INVENTORY_SYNC_FAILED') {
+    return false;
+  }
+
+  return true;
 }

@@ -17,6 +17,11 @@ export const Home: Component = () => {
 
   const format = (d: string) => (d.length <= 3 ? d : `${d.slice(0, 3)}-${d.slice(3, 6)}`);
   const random6 = () => String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
+  const copyCode = async () => {
+    const code = raw();
+    if (code.length !== 6) return;
+    await navigator.clipboard.writeText(code);
+  };
 
   const openConfirm = (room: RoomInitial) => {
     setPendingRoom(room);
@@ -71,9 +76,9 @@ export const Home: Component = () => {
                   value={format(raw())}
                   onBeforeInput={(e) => {
                     const ie = e as InputEvent;
-                    if (ie.inputType?.startsWith('insert')) {
+                    if (ie.inputType === 'insertText') {
                       const data = ie.data ?? '';
-                      // Разрешаем вставку только цифр; дефис и пробелы не допускаем
+                      // Ограничиваем только ручной ввод; вставка обрабатывается в onInput.
                       if (/\D/.test(data)) ie.preventDefault();
                     }
                   }}
@@ -106,6 +111,30 @@ export const Home: Component = () => {
                     <title>Generate random code</title>
                     <path d="M20 12a8 8 0 1 1-6.34-7.66" />
                     <path d="M13 1.5l3 3-3 3" />
+                  </svg>
+                </button>
+
+                <button
+                  type="button"
+                  class="inline-flex items-center justify-center border border-gray-300 border-l-0 bg-white px-3 py-2 text-gray-700 hover:bg-gray-50 focus:z-10 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                  title="Copy code"
+                  onClick={() => void copyCode()}
+                  disabled={busy() || raw().length !== 6}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    width="24"
+                    height="24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <title>Copy code</title>
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                   </svg>
                 </button>
 

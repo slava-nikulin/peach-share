@@ -5,7 +5,7 @@ import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { getBll } from '../../app/bll';
 import type { P2pChannel } from '../../bll/ports/p2p-channel';
 import type { RoomIntent } from '../../entity/room';
-import { RoomErrorState } from '../components/room/RoomErrorState';
+import { RoomErrorState } from './room/components/RoomErrorState';
 import { RoomWorkspace } from './room/components/RoomWorkspace';
 
 type RoomErrorKind = 'invalid_link' | 'expired_session' | 'operation_failed';

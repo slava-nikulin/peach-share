@@ -1,12 +1,24 @@
-import { mergeConfig, type UserConfig } from 'vite';
+import { mergeConfig, type UserConfig, type UserConfigExport } from 'vite';
 import { defineConfig } from 'vitest/config';
 import viteConfig from './vite.config';
 
-const baseViteConfig = viteConfig as UserConfig;
+function resolveViteConfig(config: UserConfigExport, mode: string): UserConfig | Promise<UserConfig> {
+  if (typeof config === 'function') {
+    return config({
+      command: 'serve',
+      mode,
+      isSsrBuild: false,
+      isPreview: false,
+    });
+  }
 
-export default mergeConfig(
-  baseViteConfig,
-  defineConfig({
+  return config;
+}
+
+export default defineConfig(async ({ mode }) => {
+  const baseViteConfig = (await resolveViteConfig(viteConfig, mode)) as UserConfig;
+
+  return mergeConfig(baseViteConfig, {
     test: {
       globals: true,
       projects: [
@@ -54,5 +66,5 @@ export default mergeConfig(
         },
       ],
     },
-  }),
-);
+  });
+});

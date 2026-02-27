@@ -1,12 +1,14 @@
-FROM traefik:v3.5.3
+FROM traefik:v3.6.9 AS traefik_bin
+RUN test -x /usr/local/bin/traefik
 
-# 1. Нам нужен bash, curl, (optional) openssl только для отладки. apk доступен в traefik:v3.5.x.
-RUN apk add --no-cache bash curl openssl \
- && curl -L -o /usr/local/bin/mkcert "https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-amd64" \
+FROM alpine:3.20
+
+RUN apk add --no-cache \
+  bash curl openssl ca-certificates nss-tools
+
+COPY --from=traefik_bin /usr/local/bin/traefik /usr/local/bin/traefik
+
+# mkcert (1.4.4)
+RUN curl -fsSL -o /usr/local/bin/mkcert \
+    https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-amd64 \
  && chmod +x /usr/local/bin/mkcert
-
-# 2. Копируем entrypoint
-COPY docker/scripts/offline-proxy-entrypoint.sh /app/offline-proxy-entrypoint.sh
-
-WORKDIR /app
-ENTRYPOINT ["./offline-proxy-entrypoint.sh"]

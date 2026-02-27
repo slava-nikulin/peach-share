@@ -2,12 +2,12 @@
 set -Eeuo pipefail
 
 PROJECT="peachshare-offline"
-COMPOSE_FILE="docker/docker-compose.offline.yml"
+BASE_FILE="docker/docker-compose.base.yml"
+OFFLINE_FILE="docker/docker-compose.offline.yml"
 COMPOSE_UP_FLAGS="${COMPOSE_UP_FLAGS:---force-recreate --remove-orphans}"
 COMPOSE_PULL_MODE="${COMPOSE_PULL_MODE:-}"
 
 get_host_ip() {
-  # пытаемся вытащить приватный IPv4 с Wi-Fi интерфейса (wl*)
   local ip
   ip="$(
     ip -4 -o addr show scope global | awk '
@@ -20,7 +20,6 @@ get_host_ip() {
     '
   )"
 
-  # если не нашли, fallback: любой приватный IPv4 не с loopback/docker/veth
   if [[ -z "$ip" ]]; then
     ip="$(
       ip -4 -o addr show scope global | awk '
@@ -41,30 +40,32 @@ main() {
   local action="${1:-up}"
 
   if [[ "$action" == "stop" ]]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" down
+    docker compose -p "$PROJECT" -f "$BASE_FILE" -f "$OFFLINE_FILE" --profile offline down
     exit 0
   fi
 
-  # default: up
   local HOST_IP
   HOST_IP="$(get_host_ip)"
-
   if [[ -z "$HOST_IP" ]]; then
     echo "could not determine IPv4" >&2
     exit 1
   fi
 
-  set -- up
+  shift || true
+
+  set -- up "$@"
 
   if [ -n "$COMPOSE_PULL_MODE" ]; then
     set -- "$@" --pull "$COMPOSE_PULL_MODE"
   fi
 
-  for arg in $COMPOSE_UP_FLAGS; do
-    set -- "$@" "$arg"
-  done
+  # Разворачиваем флаги из строки в массив
+  # shellcheck disable=SC2206
+  local flags=( $COMPOSE_UP_FLAGS )
+  set -- "$@" "${flags[@]}"
 
-  HOST_LAN_IP="$HOST_IP" docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"
+  HOST_LAN_IP="$HOST_IP" \
+    docker compose -p "$PROJECT" -f "$BASE_FILE" -f "$OFFLINE_FILE" --profile offline "$@"
 }
 
 main "$@"

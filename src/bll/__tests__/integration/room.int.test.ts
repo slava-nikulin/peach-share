@@ -21,14 +21,31 @@ function toU8(x: unknown): Uint8Array {
 }
 
 function onceReceive(ch: P2pChannel): Promise<Uint8Array> {
-  return new Promise((resolve) => {
-    const unsub = ch.onReceive((d) => {
+  const reader = ch.readable.getReader();
+  return reader
+    .read()
+    .then(({ value, done }) => {
+      if (done || !value) {
+        throw new Error('Channel closed before message was received');
+      }
+      return new Uint8Array(value);
+    })
+    .finally(() => {
       try {
-        unsub();
+        reader.releaseLock();
       } catch {}
-      resolve(d);
     });
-  });
+}
+
+async function sendOnce(ch: P2pChannel, payload: Uint8Array): Promise<void> {
+  const writer = ch.writable.getWriter();
+  try {
+    await writer.write(payload);
+  } finally {
+    try {
+      writer.releaseLock();
+    } catch {}
+  }
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -238,10 +255,15 @@ describe('rooms handshake integration (happy path)', () => {
     const aToB = withTimeout(onceReceive(chResponder), 5_000, 'timeout waiting A->B');
     const bToA = withTimeout(onceReceive(chOwner), 5_000, 'timeout waiting B->A');
 
-    chOwner.send(new Uint8Array([1, 2, 3]));
-    chResponder.send(new Uint8Array([9, 8, 7]));
+    await Promise.all([
+      sendOnce(chOwner, new Uint8Array([1, 2, 3])),
+      sendOnce(chResponder, new Uint8Array([9, 8, 7])),
+    ]);
 
     expect(Array.from(toU8(await aToB))).toEqual([1, 2, 3]);
     expect(Array.from(toU8(await bToA))).toEqual([9, 8, 7]);
+
+    chOwner.close();
+    chResponder.close();
   });
 });

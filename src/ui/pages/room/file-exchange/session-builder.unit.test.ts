@@ -196,7 +196,7 @@ function createFx2Caps(overrides?: {
   return {
     maxMessageBytes: overrides?.maxMessageBytes ?? 128 * 1024,
     chunkBytes: overrides?.chunkBytes ?? 32 * 1024,
-    maxFileBytes: overrides?.maxFileBytes ?? 2 * 1024 * 1024 * 1024,
+    maxFileBytes: overrides?.maxFileBytes ?? 128 * 1024 * 1024,
     hash: {
       algorithms: ['sha256'],
       modes: overrides?.hashModes ?? [HASH_MODE_SHA256_END],

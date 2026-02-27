@@ -18,6 +18,7 @@ export class CreateRoomUseCase {
   private readonly roomsRepo: RoomRepositoryPort;
   private readonly pake: PakePort;
   private readonly timeoutMs: number;
+  private readonly rtcTimeoutMs: number;
   private readonly webRtc: WebRtcPort;
   private readonly waitSecondSideMs: number;
 
@@ -27,10 +28,12 @@ export class CreateRoomUseCase {
     webRtc: WebRtcPort,
     timeoutMs: number,
     waitSecondSideMs = 30_000,
+    rtcTimeoutMs = timeoutMs,
   ) {
     this.roomsRepo = roomsRepo;
     this.pake = pake;
     this.timeoutMs = timeoutMs;
+    this.rtcTimeoutMs = rtcTimeoutMs;
     this.webRtc = webRtc;
     this.waitSecondSideMs = waitSecondSideMs;
   }
@@ -77,12 +80,13 @@ export class CreateRoomUseCase {
       await this.roomsRepo.writeOffer(roomId, offerEnc);
 
       // 2) Подождать answer и принять его
-      const answerEnc = await this.roomsRepo.waitAnswer(roomId, this.timeoutMs);
+      const answerEnc = await this.roomsRepo.waitAnswer(roomId, this.rtcTimeoutMs);
       const answer = decryptWebRtcSignal(isk, roomId, 'answer', answerEnc);
       this.webRtc.acceptAnswer(webRtcSid, answer);
 
       // 3) Дождаться connect
-      return await this.webRtc.waitConnected(webRtcSid, this.timeoutMs);
+      const channel = await this.webRtc.waitConnected(webRtcSid, this.rtcTimeoutMs);
+      return channel;
     } catch (err) {
       try {
         this.webRtc.destroy(webRtcSid);

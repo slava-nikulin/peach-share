@@ -1,6 +1,8 @@
 import type { ChainablePromiseElement } from 'webdriverio';
 import { Page } from './page';
 
+const HOME_READY_TIMEOUT_MS = 7_000;
+
 class HomePage extends Page {
   private get roomCodeInput(): ChainablePromiseElement {
     return this.browser.$('input[name="room-id"]');
@@ -32,7 +34,7 @@ class HomePage extends Page {
   }
 
   public async waitForReady(): Promise<void> {
-    await this.roomCodeInput.waitForDisplayed({ timeout: 7000 });
+    await this.roomCodeInput.waitForDisplayed({ timeout: HOME_READY_TIMEOUT_MS });
   }
 
   public async generateRoomCode(): Promise<void> {
@@ -71,6 +73,13 @@ class HomePage extends Page {
   public async getRoomCodeFormatted(): Promise<string> {
     await this.waitForReady();
     return this.roomCodeInput.getValue();
+  }
+
+  public async setRoomCodeFormatted(code: string): Promise<void> {
+    await this.waitForReady();
+    await this.roomCodeInput.click();
+    await this.roomCodeInput.clearValue();
+    await this.roomCodeInput.setValue(code);
   }
 
   public async start(): Promise<void> {

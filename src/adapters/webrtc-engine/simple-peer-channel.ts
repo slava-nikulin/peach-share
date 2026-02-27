@@ -4,10 +4,12 @@ import type { P2pChannel } from '../../bll/ports/p2p-channel';
 type PeerWritableLike = {
   write(chunk: Uint8Array, cb?: (err?: unknown) => void): boolean | void;
   on(event: 'data', cb: (data: unknown) => void): void;
+  on(event: 'drain', cb: () => void): void;
   on(event: 'error', cb: (err: unknown) => void): void;
   on(event: 'close', cb: () => void): void;
 
   removeListener(event: 'data', cb: (data: unknown) => void): void;
+  removeListener(event: 'drain', cb: () => void): void;
   removeListener(event: 'error', cb: (err: unknown) => void): void;
   removeListener(event: 'close', cb: () => void): void;
 
@@ -91,19 +93,10 @@ export class SimplePeerChannel implements P2pChannel {
     });
 
     this.writable = new WritableStream<Uint8Array>({
-      write: (chunk) => {
+      write: async (chunk) => {
         if (this.closed) return Promise.reject(new Error('channel closed'));
 
-        return new Promise<void>((resolve, reject) => {
-          try {
-            this.peer.write(chunk, (err?: unknown) => {
-              if (err) reject(err instanceof Error ? err : new Error(String(err)));
-              else resolve();
-            });
-          } catch (e) {
-            reject(e instanceof Error ? e : new Error(String(e)));
-          }
-        });
+        await this.writeChunk(chunk);
       },
       close: async () => {
         // no-op: lifecycle управляется только channel.close()
@@ -147,5 +140,51 @@ export class SimplePeerChannel implements P2pChannel {
       } catch {}
     }
     this.closeSubs.clear();
+  }
+
+  private writeChunk(chunk: Uint8Array): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+
+      const finish = (fn: () => void): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        fn();
+      };
+
+      const onDrain = (): void => {
+        finish(resolve);
+      };
+
+      const onClose = (): void => {
+        finish(() => reject(new Error('channel closed while waiting for drain')));
+      };
+
+      const onError = (error: unknown): void => {
+        finish(() => reject(error instanceof Error ? error : new Error(String(error))));
+      };
+
+      const cleanup = (): void => {
+        this.peer.removeListener('drain', onDrain);
+        this.peer.removeListener('close', onClose);
+        this.peer.removeListener('error', onError);
+      };
+
+      try {
+        this.peer.on('close', onClose);
+        this.peer.on('error', onError);
+
+        const canContinue = this.peer.write(chunk);
+        if (canContinue === false) {
+          this.peer.on('drain', onDrain);
+          return;
+        }
+
+        finish(resolve);
+      } catch (error) {
+        finish(() => reject(error instanceof Error ? error : new Error(String(error))));
+      }
+    });
   }
 }

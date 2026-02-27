@@ -205,18 +205,18 @@ export class RtdbRoomRepository implements RoomRepositoryPort {
     return waitForStringAtPath(this.db, path, timeoutMs, what, maxLen);
   }
 
-  private pakeLabel(who: Who, field: PakeField) {
-    return `${who}/pake/${field}`;
+  private pakeLabel(roomId: string, who: Who, field: PakeField) {
+    return `room=${roomId} ${who}/pake/${field}`;
   }
 
-  private rtcLabel(who: Who) {
-    return `${who}/rtc/msg`;
+  private rtcLabel(roomId: string, who: Who) {
+    return `room=${roomId} ${who}/rtc/msg`;
   }
 
   private writePake(roomId: string, who: Who, field: PakeField, payloadB64u: string) {
     return this.writeBoundedString(
       PATH.pake(roomId, who, field),
-      this.pakeLabel(who, field),
+      this.pakeLabel(roomId, who, field),
       payloadB64u,
       LIMITS.PAKE,
     );
@@ -225,18 +225,28 @@ export class RtdbRoomRepository implements RoomRepositoryPort {
   private waitPake(roomId: string, who: Who, field: PakeField, timeoutMs: number) {
     return this.waitBoundedString(
       PATH.pake(roomId, who, field),
-      this.pakeLabel(who, field),
+      this.pakeLabel(roomId, who, field),
       LIMITS.PAKE,
       timeoutMs,
     );
   }
 
   private writeRtc(roomId: string, who: Who, boxed: string) {
-    return this.writeBoundedString(PATH.rtc(roomId, who), this.rtcLabel(who), boxed, LIMITS.RTC);
+    return this.writeBoundedString(
+      PATH.rtc(roomId, who),
+      this.rtcLabel(roomId, who),
+      boxed,
+      LIMITS.RTC,
+    );
   }
 
   private waitRtc(roomId: string, who: Who, timeoutMs: number) {
-    return this.waitBoundedString(PATH.rtc(roomId, who), this.rtcLabel(who), LIMITS.RTC, timeoutMs);
+    return this.waitBoundedString(
+      PATH.rtc(roomId, who),
+      this.rtcLabel(roomId, who),
+      LIMITS.RTC,
+      timeoutMs,
+    );
   }
 
   // ---- RoomRepositoryPort ----

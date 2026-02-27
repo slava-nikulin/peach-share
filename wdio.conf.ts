@@ -58,6 +58,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
     OwnerBrowser: {
       capabilities: {
         browserName: 'chrome',
+        acceptInsecureCerts: true,
         'goog:chromeOptions': {
           args: [
             ...(isHeadless ? ['--headless', '--disable-gpu', '--window-size=1920,1080'] : []),
@@ -65,6 +66,8 @@ export const config: WebdriverIO.MultiremoteConfig = {
             '--disable-dev-shm-usage',
             '--use-fake-ui-for-media-stream',
             '--use-fake-device-for-media-stream',
+            '--disable-dev-shm-usage',
+            '--no-sandbox',
             ...insecureOrigins.map(
               (origin) => `--unsafely-treat-insecure-origin-as-secure=${origin}`,
             ),
@@ -75,6 +78,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
     GuestBrowser: {
       capabilities: {
         browserName: 'chrome',
+        acceptInsecureCerts: true,
         'goog:chromeOptions': {
           args: [
             ...(isHeadless ? ['--headless', '--disable-gpu', '--window-size=1920,1080'] : []),
@@ -82,6 +86,8 @@ export const config: WebdriverIO.MultiremoteConfig = {
             '--disable-dev-shm-usage',
             '--use-fake-ui-for-media-stream',
             '--use-fake-device-for-media-stream',
+            '--disable-dev-shm-usage',
+            '--no-sandbox',
             ...insecureOrigins.map(
               (origin) => `--unsafely-treat-insecure-origin-as-secure=${origin}`,
             ),

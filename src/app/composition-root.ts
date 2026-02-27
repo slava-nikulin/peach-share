@@ -1,12 +1,11 @@
 /** biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: <explanation> */
 import type { FirebaseOptions } from 'firebase/app';
-
-import { Argon2idBrowserKdf } from '../adapters/argon-kdf/argon2id.browser';
+import { DrandOtpClient } from '../adapters/beacon/otp-drand';
 import { createEmulatorRtdbConnection } from '../adapters/firebase/emulator';
 import { createProdRtdbConnection } from '../adapters/firebase/prod';
 import { RtdbOnlineRunner } from '../adapters/firebase/rtdb-online-runner';
 import { RtdbRoomRepository } from '../adapters/firebase/rtdb-room-repository';
-import { DrandOtpClient } from '../adapters/otp-drand';
+import { Argon2idBrowserKdf } from '../adapters/kdf/argon2id.browser';
 import { CpaceEngine } from '../adapters/pake-engine/cpace';
 import { CreateRoomUseCase } from '../bll/use-cases/create-room';
 import { InitRoomUseCase } from '../bll/use-cases/init-room';
@@ -22,6 +21,7 @@ export async function compose() {
   const env = import.meta.env;
   const useEmulators = env.VITE_USE_EMULATORS === 'true';
   const forceRtdbWebSockets = env.VITE_FIREBASE_FORCE_WEBSOCKETS === 'true';
+  const isOffline = import.meta.env.MODE === 'offline';
 
   const firebaseOptions: FirebaseOptions = useEmulators
     ? {
@@ -62,25 +62,54 @@ export async function compose() {
 
   // Adapters
   const roomRepo = new RtdbRoomRepository(firebase.db);
-  const argonAdapter = new Argon2idBrowserKdf();
-  const otpClient = new DrandOtpClient();
+
+  const kdfAdapter = isOffline
+    ? new (await import('../adapters/kdf/sha256')).Sha256Kdf()
+    : new Argon2idBrowserKdf();
+
+  const otpClient = isOffline
+    ? new (await import('../adapters/beacon/offline-otp-client')).OfflineOtpClient()
+    : new DrandOtpClient();
+
   // Usecases (core)
-  const initRoomCore = new InitRoomUseCase(roomRepo, argonAdapter, otpClient);
+  const initRoomCore = new InitRoomUseCase(roomRepo, kdfAdapter, otpClient);
 
   let roomFlowsPromise:
     | Promise<{ createRoomCore: CreateRoomUseCase; joinRoomCore: JoinRoomUseCase }>
     | undefined;
 
-  const getRoomFlows = async () => {
+  const getRoomFlows = async (): Promise<{
+    createRoomCore: CreateRoomUseCase;
+    joinRoomCore: JoinRoomUseCase;
+  }> => {
     if (!roomFlowsPromise) {
       roomFlowsPromise = (async () => {
         const { SimplePeerEngine } = await import('../adapters/webrtc-engine/simple-peer');
         const pake = new CpaceEngine();
+
+        // const rtcConfig: RTCConfiguration | undefined = isOffline
+        //   ? { iceServers: [{ urls: `stun:${location.hostname}:3478` }] }
+        //   : {
+        //       iceServers: [
+        //         { urls: 'stun:stun.l.google.com:19302' },
+        //         { urls: 'stun:stun1.l.google.com:19302' },
+        //       ],
+        //     };
         const webrtc = new SimplePeerEngine();
+        const pakeTimeoutMs = 5_000;
+        const rtcTimeoutMs = 20_000;
+        const waitSecondSideMs = 30_000;
 
         return {
-          createRoomCore: new CreateRoomUseCase(roomRepo, pake, webrtc, 5000, 30000),
-          joinRoomCore: new JoinRoomUseCase(roomRepo, pake, webrtc, 5000),
+          createRoomCore: new CreateRoomUseCase(
+            roomRepo,
+            pake,
+            webrtc,
+            pakeTimeoutMs,
+            waitSecondSideMs,
+            rtcTimeoutMs,
+          ),
+          joinRoomCore: new JoinRoomUseCase(roomRepo, pake, webrtc, pakeTimeoutMs, rtcTimeoutMs),
         };
       })();
     }

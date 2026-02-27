@@ -263,7 +263,7 @@ class FileExchangeSessionImpl implements FileExchangeSession {
   requestDownload(fileId: string): DownloadHandle {
     let mimeHint = this.peerIndex.find((file) => file.id === fileId)?.mime || 'application/octet-stream';
 
-    const memorySink = createInMemorySinkWriter(this.cfg.maxInMemoryDownloadBytes, createTransferException);
+    const memorySink = createInMemorySinkWriter(this.currentMaxFileBytes(), createTransferException);
     const handle = this.requestDownloadToInternal(fileId, memorySink.sink, {
       onMeta: (meta) => {
         mimeHint = meta.mime;

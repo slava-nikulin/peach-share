@@ -9,17 +9,12 @@ export interface FileExchangeConfig {
   transportMaxFrameBytes?: number;
   transportMaxMessageBytes?: number;
 
-  /** @deprecated Use maxConcurrentOutgoingTransfers */
-  maxParallelTransfers?: number;
   maxConcurrentOutgoingTransfers?: number;
   maxConcurrentIncomingTransfers?: number;
 
   maxFileBytes?: number;
   maxBufferedIncomingBytes?: number;
-  maxInMemoryDownloadBytes?: number;
 
-  /** Legacy alias for idle timeout. */
-  defaultTimeoutMs?: number;
   metaTimeoutMs?: number;
   idleTimeoutMs?: number;
   /** `undefined` => default hard timeout, `null` => disabled, positive => enabled. */
@@ -42,7 +37,6 @@ export interface ResolvedConfig {
 
   maxFileBytes: number;
   maxBufferedIncomingBytes: number;
-  maxInMemoryDownloadBytes: number;
 
   metaTimeoutMs: number;
   idleTimeoutMs: number;
@@ -52,13 +46,6 @@ export interface ResolvedConfig {
 }
 
 export function resolveConfig(config: FileExchangeConfig): ResolvedConfig {
-  const idleFromLegacy = normalizePositiveInt(config.defaultTimeoutMs, 30_000);
-
-  const maxConcurrentOutgoingTransfers = normalizePositiveInt(
-    config.maxConcurrentOutgoingTransfers ?? config.maxParallelTransfers,
-    2,
-  );
-
   const hardTimeoutMs = resolveHardTimeoutMs(config.hardTimeoutMs);
 
   const resolved: ResolvedConfig = {
@@ -68,17 +55,22 @@ export function resolveConfig(config: FileExchangeConfig): ResolvedConfig {
     appBuildId: normalizeBuildId(config.appBuildId),
 
     transportMaxFrameBytes: normalizePositiveInt(config.transportMaxFrameBytes, 16 * 1024),
-    transportMaxMessageBytes: normalizePositiveInt(config.transportMaxMessageBytes, 8 * 1024 * 1024),
+    transportMaxMessageBytes: normalizePositiveInt(
+      config.transportMaxMessageBytes,
+      8 * 1024 * 1024,
+    ),
 
-    maxConcurrentOutgoingTransfers,
+    maxConcurrentOutgoingTransfers: normalizePositiveInt(config.maxConcurrentOutgoingTransfers, 2),
     maxConcurrentIncomingTransfers: normalizePositiveInt(config.maxConcurrentIncomingTransfers, 2),
 
-    maxFileBytes: normalizePositiveInt(config.maxFileBytes, 2 * 1024 * 1024 * 1024),
-    maxBufferedIncomingBytes: normalizePositiveInt(config.maxBufferedIncomingBytes, 64 * 1024 * 1024),
-    maxInMemoryDownloadBytes: normalizePositiveInt(config.maxInMemoryDownloadBytes, 128 * 1024 * 1024),
+    maxFileBytes: normalizePositiveInt(config.maxFileBytes, 128 * 1024 * 1024),
+    maxBufferedIncomingBytes: normalizePositiveInt(
+      config.maxBufferedIncomingBytes,
+      64 * 1024 * 1024,
+    ),
 
     metaTimeoutMs: normalizePositiveInt(config.metaTimeoutMs, 15_000),
-    idleTimeoutMs: normalizePositiveInt(config.idleTimeoutMs, idleFromLegacy),
+    idleTimeoutMs: normalizePositiveInt(config.idleTimeoutMs, 30_000),
     hardTimeoutMs,
 
     closeOnProtocolViolation: config.closeOnProtocolViolation === true,

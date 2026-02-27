@@ -5,6 +5,7 @@ export interface MessageTransportOpts {
   maxFrameBytes?: number;
   maxMessageBytes?: number;
   yieldEveryFrames?: number;
+  maxQueuedWriteBytes?: number;
   maxConsecutiveControlJobs?: number;
   onTransportError?: (error: unknown) => void;
 }
@@ -32,6 +33,7 @@ export class MessageTransport {
   private readonly maxFrameBytes: number;
   private readonly maxMessageBytes: number;
   private readonly yieldEveryFrames: number;
+  private readonly maxQueuedWriteBytes: number;
   private readonly maxConsecutiveControlJobs: number;
   private readonly onTransportError?: (error: unknown) => void;
 
@@ -48,10 +50,18 @@ export class MessageTransport {
     this.maxFrameBytes = opts.maxFrameBytes ?? 16 * 1024;
     this.maxMessageBytes = opts.maxMessageBytes ?? 8 * 1024 * 1024;
     this.yieldEveryFrames = Math.max(1, opts.yieldEveryFrames ?? 8);
+    this.maxQueuedWriteBytes = Math.max(16 * 1024, opts.maxQueuedWriteBytes ?? 512 * 1024);
     this.maxConsecutiveControlJobs = Math.max(1, opts.maxConsecutiveControlJobs ?? 8);
     this.onTransportError = opts.onTransportError;
 
     this.reassembler = new Reassembler({ maxMessageBytes: this.maxMessageBytes });
+
+    if (channel.readable.locked) {
+      throw new Error('P2pChannel readable stream is already locked; dispose previous session first');
+    }
+    if (channel.writable.locked) {
+      throw new Error('P2pChannel writable stream is already locked; dispose previous session first');
+    }
 
     this.reader = channel.readable.getReader();
     this.writer = channel.writable.getWriter();
@@ -173,18 +183,33 @@ export class MessageTransport {
 
       try {
         let frameCount = 0;
+        let queuedWriteBytes = 0;
+        const queuedWrites: Promise<void>[] = [];
+
+        const flushQueuedWrites = async (): Promise<void> => {
+          if (queuedWrites.length === 0) return;
+          const pending = queuedWrites.splice(0);
+          queuedWriteBytes = 0;
+          await Promise.all(pending);
+        };
+
         for (const frame of fragmentMessage(job.message, this.maxFrameBytes)) {
           if (this.disposed) throw new Error('MessageTransport disposed');
 
-          await this.writer.ready;
-          await this.writer.write(frame);
+          queuedWrites.push(this.writer.write(frame));
+          queuedWriteBytes += frame.length;
 
           frameCount += 1;
+          if (queuedWriteBytes >= this.maxQueuedWriteBytes) {
+            await flushQueuedWrites();
+          }
+
           if (frameCount % this.yieldEveryFrames === 0) {
             await yieldToEventLoop();
           }
         }
 
+        await flushQueuedWrites();
         job.resolve();
       } catch (error) {
         job.reject(error);
@@ -271,9 +296,9 @@ export class MessageTransport {
 }
 
 function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, 0);
-  });
+  // Use microtask yielding instead of timers to avoid background-tab timer throttling
+  // from stalling outbound transfer pumps.
+  return Promise.resolve();
 }
 
 function safeCall(fn: (() => void) | undefined): void {

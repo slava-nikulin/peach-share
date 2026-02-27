@@ -11,10 +11,10 @@ HOST_IP="${HOST_LAN_IP:?HOST_LAN_IP not set}"
 LEAF_ROTATE_DAYS_BEFORE_EXPIRY="${LEAF_ROTATE_DAYS_BEFORE_EXPIRY:-1}"
 EXPIRY_GRACE_SEC="$(( LEAF_ROTATE_DAYS_BEFORE_EXPIRY * 24 * 3600 ))"
 FORCE_NEW_CA="${FORCE_NEW_CA:-false}"
-HTTP_HOST_PORT="${HTTP_HOST_PORT:-8080}"
-HTTPS_HOST_PORT="${HTTPS_HOST_PORT:-8443}"
-RTDB_HOST_PORT="${RTDB_HOST_PORT:-9443}"
-AUTH_HOST_PORT="${AUTH_HOST_PORT:-9444}"
+
+HTTPS_ALT_PORT="${HTTPS_HOST_PORT:-8443}"
+RTDB_PORT="${RTDB_HOST_PORT:-9443}"
+AUTH_PORT="${AUTH_HOST_PORT:-9444}"
 
 mkdir -p "$CERT_DIR" "$CAROOT_DIR"
 
@@ -37,8 +37,8 @@ leaf_not_expiring() {
 leaf_has_ip_and_localhost() {
   local dump
   dump="$(openssl x509 -in "$SERVER_CRT" -noout -text | sed -n '/Subject Alternative Name/,$p')"
-  echo "$dump" | grep -q "IP Address:$HOST_IP"   || return 1
-  echo "$dump" | grep -q "DNS:localhost"         || return 1
+  echo "$dump" | grep -q "IP Address:$HOST_IP" || return 1
+  echo "$dump" | grep -q "DNS:localhost"       || return 1
   return 0
 }
 
@@ -50,25 +50,29 @@ leaf_issuer_eq_ca_subject() {
 }
 
 regen_ca() {
-  echo "mkcert: FORCE_NEW_CA or CA invalid. Recreating CA"
+  echo "mkcert: creating CA in $CAROOT_DIR"
   rm -rf "$CAROOT_DIR"/*
-  CAROOT="$CAROOT_DIR" mkcert -install
+  # В контейнере установка в системные trust stores не обязательна.
+  CAROOT="$CAROOT_DIR" mkcert -install || true
+  # На случай если -install не создал CA (редко), “дергаем” генерацию сертификата,
+  # mkcert создаст CA автоматически при необходимости.
+  has_ca || true
 }
 
 regen_leaf() {
-  echo "mkcert: Generating leaf for $HOST_IP, localhost, peach.local"
+  echo "mkcert: generating leaf for proxy.peach.local, peach.local, localhost, $HOST_IP"
   CAROOT="$CAROOT_DIR" mkcert \
     -cert-file "$SERVER_CRT" \
     -key-file "$SERVER_KEY" \
-    "$HOST_IP" localhost peach.local
+    proxy.peach.local peach.local localhost "$HOST_IP"
 }
 
-# 1. ensure CA
+# 1) ensure CA
 if [ "$FORCE_NEW_CA" = "true" ] || ! ca_valid_enough; then
   regen_ca
 fi
 
-# 2. ensure leaf
+# 2) ensure leaf
 if ! leaf_exists; then
   regen_leaf
 else
@@ -83,12 +87,12 @@ else
   fi
 fi
 
-# 3. publish CA for clients to download and install
+# 3) publish CA for clients to download
 if [ -d /certs-public ]; then
-  cp "$CAROOT_DIR/rootCA.pem" /certs-public/peachshare-rootCA.crt
+  cp -f "$CAROOT_DIR/rootCA.pem" /certs-public/peachshare-rootCA.crt
 fi
 
-# 4. traefik dynamic config
+# 4) traefik dynamic tls config
 cat > "$TRAEFIK_DYNAMIC" <<EOF
 tls:
   certificates:
@@ -102,19 +106,21 @@ tls:
 EOF
 
 echo "Traefik offline proxy is ready."
-echo "  Static HTTP : http://${HOST_IP}:${HTTP_HOST_PORT}"
-echo "  Static HTTPS: https://${HOST_IP}:${HTTPS_HOST_PORT}"
-echo "  RTDB emulator over TLS: https://${HOST_IP}:${RTDB_HOST_PORT}"
-echo "  Auth emulator over TLS: https://${HOST_IP}:${AUTH_HOST_PORT}"
+echo "  App HTTPS : https://${HOST_IP} (alt: https://${HOST_IP}:${HTTPS_ALT_PORT})"
+echo "  RTDB TLS  : https://${HOST_IP}:${RTDB_PORT}"
+echo "  Auth TLS  : https://${HOST_IP}:${AUTH_PORT}"
+echo "  CA download: https://${HOST_IP}/ca/peachshare-rootCA.crt"
 
-# 5. run Traefik
 exec traefik \
-  --entrypoints.websecure.address=:443 \
-  --entrypoints.websecure_alt.address=:8443 \
-  --entrypoints.rtdb-emulator.address=":$RTDB_HOST_PORT" \
-  --entrypoints.auth-emulator.address=":$AUTH_HOST_PORT" \
+  --entrypoints.websecure.address=":443" \
+  --entrypoints.websecure_alt.address=":${HTTPS_ALT_PORT}" \
+  --entrypoints.rtdb.address=":${RTDB_PORT}" \
+  --entrypoints.auth.address=":${AUTH_PORT}" \
+  --entrypoints.websecure.transport.respondingTimeouts.idleTimeout=0 \
+  --entrypoints.websecure_alt.transport.respondingTimeouts.idleTimeout=0 \
+  --entrypoints.rtdb.transport.respondingTimeouts.idleTimeout=0 \
+  --entrypoints.auth.transport.respondingTimeouts.idleTimeout=0 \
   --providers.file.filename="$TRAEFIK_DYNAMIC" \
   --providers.file.watch=true \
-  --providers.docker=true 
-  # \
-  # --log.level=DEBUG
+  --providers.docker=true \
+  --providers.docker.exposedbydefault=false

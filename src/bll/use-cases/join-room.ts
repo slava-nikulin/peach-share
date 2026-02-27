@@ -19,16 +19,19 @@ export class JoinRoomUseCase {
   private readonly pake: PakePort;
   private readonly webRtc: WebRtcPort;
   private readonly timeoutMs: number;
+  private readonly rtcTimeoutMs: number;
 
   constructor(
     roomsRepo: RoomRepositoryPort,
     pake: PakePort,
     webRtc: WebRtcPort,
     timeoutMs: number,
+    rtcTimeoutMs = timeoutMs,
   ) {
     this.roomsRepo = roomsRepo;
     this.pake = pake;
     this.timeoutMs = timeoutMs;
+    this.rtcTimeoutMs = rtcTimeoutMs;
     this.webRtc = webRtc;
   }
 
@@ -64,7 +67,7 @@ export class JoinRoomUseCase {
 
       webRtcSid = this.webRtc.newSession('responder');
 
-      const offerEnc = await this.roomsRepo.waitOffer(roomId, this.timeoutMs);
+      const offerEnc = await this.roomsRepo.waitOffer(roomId, this.rtcTimeoutMs);
       const offer = decryptWebRtcSignal(isk, roomId, 'offer', offerEnc);
 
       const answer = await this.webRtc.generateAnswer(webRtcSid, offer);
@@ -72,7 +75,8 @@ export class JoinRoomUseCase {
 
       await this.roomsRepo.writeAnswer(roomId, answerEnc);
 
-      return await this.webRtc.waitConnected(webRtcSid, this.timeoutMs);
+      const channel = await this.webRtc.waitConnected(webRtcSid, this.rtcTimeoutMs);
+      return channel;
     } finally {
       try {
         await this.roomsRepo.finalize(roomId);

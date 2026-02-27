@@ -125,19 +125,7 @@ export const deleteRoomOnFinalized = onValueWritten('/rooms/{roomId}/meta/state'
   const roomRef = admin.database().ref(`/rooms/${roomId}`);
 
   try {
-    // Если хочешь чистить слоты userspace — прочитай private ДО удаления комнаты:
-    // const privSnap = await admin.database().ref(`/rooms/${roomId}/private`).once('value');
-    // const priv = privSnap.val() as any;
-    // const creatorUid = typeof priv?.creator_uid === 'string' ? priv.creator_uid : null;
-    // const responderUid = typeof priv?.responder_uid === 'string' ? priv.responder_uid : null;
-
     await roomRef.remove();
-
-    // Optional cleanup (если решишь включить):
-    // await Promise.allSettled([
-    //   creatorUid ? admin.database().ref(`/${creatorUid}/create`).remove() : Promise.resolve(),
-    //   responderUid ? admin.database().ref(`/${responderUid}/join`).remove() : Promise.resolve(),
-    // ]);
 
     logger.info('Room deleted on finalized state', { roomId });
   } catch (e) {

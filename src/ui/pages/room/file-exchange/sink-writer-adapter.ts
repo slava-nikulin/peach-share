@@ -26,7 +26,7 @@ export function createInMemorySinkWriter(
         if (nextTotal > maxBytes) {
           throw createError(
             'LIMIT_MEMORY_DOWNLOAD',
-            `in-memory download exceeds maxInMemoryDownloadBytes=${maxBytes}`,
+            `in-memory download exceeds maxBytes=${maxBytes}`,
           );
         }
 
