@@ -19,7 +19,10 @@ export function createTransferException(
   return error;
 }
 
-export function transferErrorCode(error: unknown, fallback: TransferFailureCode): TransferFailureCode {
+export function transferErrorCode(
+  error: unknown,
+  fallback: TransferFailureCode,
+): TransferFailureCode {
   if (isTransferException(error)) {
     return error.code;
   }

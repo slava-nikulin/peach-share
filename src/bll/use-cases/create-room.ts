@@ -1,4 +1,3 @@
-/** biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: <explanation> */
 import { base64ToUint8Array, uint8ArrayToBase64 } from 'uint8array-extras';
 import {
   decryptWebRtcSignal,
@@ -12,7 +11,7 @@ import type { PakePort } from '../ports/pake';
 import type { RoomRepositoryPort } from '../ports/room-repository';
 import type { WebRtcPort, WebRtcSessionId } from '../ports/webrtc';
 
-const te = new TextEncoder();
+const te: TextEncoder = new TextEncoder();
 
 export class CreateRoomUseCase {
   private readonly roomsRepo: RoomRepositoryPort;
@@ -27,8 +26,8 @@ export class CreateRoomUseCase {
     pake: PakePort,
     webRtc: WebRtcPort,
     timeoutMs: number,
-    waitSecondSideMs = 30_000,
-    rtcTimeoutMs = timeoutMs,
+    waitSecondSideMs: number = 30_000,
+    rtcTimeoutMs: number = timeoutMs,
   ) {
     this.roomsRepo = roomsRepo;
     this.pake = pake;

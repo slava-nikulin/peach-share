@@ -65,6 +65,7 @@ const ROOM_FILE_EXCHANGE_CONFIG: FileExchangeConfig = {
   closeOnProtocolViolation: true,
 };
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: todo refactor
 export function createRoomSession(params: {
   channel: P2pChannel;
   setMyFiles: (v: FileDesc[]) => void;

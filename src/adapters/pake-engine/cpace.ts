@@ -1,11 +1,11 @@
 // src/adapters/pake/cpace-engine.ts
 import {
-  CPaceSession,
-  G_X25519,
-  sha512,
   type CPaceMessage,
   type CPaceMode,
   type CPaceRole,
+  CPaceSession,
+  G_X25519,
+  sha512,
 } from 'cpace-ts';
 import type { PakePort, PakeRole, PakeSessionId } from '../../bll/ports/pake';
 

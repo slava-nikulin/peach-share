@@ -108,7 +108,8 @@ export function RoomWorkspace(props: { channel: P2pChannel }): JSX.Element {
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let cancelled = false;
 
-    const startSession = (attempt = 0): void => {
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: todo refactor
+    const startSession = (attempt: number = 0): void => {
       if (cancelled) return;
 
       try {
@@ -249,7 +250,9 @@ export function RoomWorkspace(props: { channel: P2pChannel }): JSX.Element {
     }
   };
 
-  const onPickFiles: JSX.EventHandler<HTMLInputElement, Event> = async (e) => {
+  const onPickFiles: JSX.EventHandler<HTMLInputElement, Event> = async (
+    e: Event & { currentTarget: HTMLInputElement; target: Element },
+  ): Promise<void> => {
     const input = e.currentTarget;
     if (!input.files || input.files.length === 0) return;
     await addFiles(input.files);
@@ -317,7 +320,7 @@ export function RoomWorkspace(props: { channel: P2pChannel }): JSX.Element {
       </div>
 
       <Show when={sessionNotice()}>
-        {(notice) => (
+        {(notice: () => SessionNotice) => (
           <div
             class={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm ${
               notice().fatal
@@ -372,7 +375,9 @@ export function RoomWorkspace(props: { channel: P2pChannel }): JSX.Element {
               class="hidden"
               multiple
               disabled={addDisabled()}
-              onChange={(e) => void onPickFiles(e)}
+              onChange={(e: Event & { currentTarget: HTMLInputElement; target: Element }): void =>
+                void onPickFiles(e)
+              }
             />
           </label>
         </div>
@@ -400,7 +405,7 @@ export function RoomWorkspace(props: { channel: P2pChannel }): JSX.Element {
                 }
               >
                 <For each={myFiles()}>
-                  {(f) => (
+                  {(f: FileDesc) => (
                     <div class="flex items-center justify-between rounded-lg border bg-white px-3 py-2">
                       <div class="min-w-0">
                         <div class="truncate text-sm">{f.name}</div>
@@ -446,7 +451,7 @@ export function RoomWorkspace(props: { channel: P2pChannel }): JSX.Element {
               }
             >
               <For each={peerFiles()}>
-                {(f) => (
+                {(f: FileDesc) => (
                   <div class="flex items-center justify-between rounded-lg border bg-white px-3 py-2">
                     <div class="min-w-0">
                       <div class="truncate text-sm">{f.name}</div>
@@ -483,7 +488,7 @@ export function RoomWorkspace(props: { channel: P2pChannel }): JSX.Element {
           fallback={<div class="text-slate-500">No transfers</div>}
         >
           <For each={transfers()}>
-            {(t) => (
+            {(t: TransferState) => (
               <div class="flex items-center justify-between gap-2 border-gray-100 border-t py-2">
                 <div class="min-w-0">
                   <div class="truncate">

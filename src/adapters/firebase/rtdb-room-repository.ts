@@ -23,7 +23,10 @@ export class RoomPayloadInvalidError extends Error {
  * - permission-denied (иногда без префикса)
  */
 function isPermissionDenied(err: unknown): boolean {
-  const code = (err as any)?.code;
+  const code =
+    typeof err === 'object' && err !== null && 'code' in err
+      ? (err as { code?: unknown }).code
+      : undefined;
   if (typeof code !== 'string') return false;
   return (
     code === 'PERMISSION_DENIED' ||
@@ -130,9 +133,13 @@ function waitForStringAtPath(
 }
 
 export class RtdbRoomRepository implements RoomRepositoryPort {
-  constructor(private readonly db: Database) {}
+  private readonly db: Database;
 
-  private r(path: string) {
+  constructor(db: Database) {
+    this.db = db;
+  }
+
+  private r(path: string): ReturnType<typeof ref> {
     return ref(this.db, path);
   }
 
@@ -196,24 +203,39 @@ export class RtdbRoomRepository implements RoomRepositoryPort {
     await this.probeReadable(PATH.messagesRoot(roomId));
   }
 
-  private async writeBoundedString(path: string, what: string, value: string, maxLen: number) {
+  private async writeBoundedString(
+    path: string,
+    what: string,
+    value: string,
+    maxLen: number,
+  ): Promise<void> {
     assertNonEmptyString(value, what, maxLen);
     await set(this.r(path), value);
   }
 
-  private waitBoundedString(path: string, what: string, maxLen: number, timeoutMs: number) {
+  private waitBoundedString(
+    path: string,
+    what: string,
+    maxLen: number,
+    timeoutMs: number,
+  ): Promise<string> {
     return waitForStringAtPath(this.db, path, timeoutMs, what, maxLen);
   }
 
-  private pakeLabel(roomId: string, who: Who, field: PakeField) {
+  private pakeLabel(roomId: string, who: Who, field: PakeField): string {
     return `room=${roomId} ${who}/pake/${field}`;
   }
 
-  private rtcLabel(roomId: string, who: Who) {
+  private rtcLabel(roomId: string, who: Who): string {
     return `room=${roomId} ${who}/rtc/msg`;
   }
 
-  private writePake(roomId: string, who: Who, field: PakeField, payloadB64u: string) {
+  private writePake(
+    roomId: string,
+    who: Who,
+    field: PakeField,
+    payloadB64u: string,
+  ): Promise<void> {
     return this.writeBoundedString(
       PATH.pake(roomId, who, field),
       this.pakeLabel(roomId, who, field),
@@ -222,7 +244,7 @@ export class RtdbRoomRepository implements RoomRepositoryPort {
     );
   }
 
-  private waitPake(roomId: string, who: Who, field: PakeField, timeoutMs: number) {
+  private waitPake(roomId: string, who: Who, field: PakeField, timeoutMs: number): Promise<string> {
     return this.waitBoundedString(
       PATH.pake(roomId, who, field),
       this.pakeLabel(roomId, who, field),
@@ -231,7 +253,7 @@ export class RtdbRoomRepository implements RoomRepositoryPort {
     );
   }
 
-  private writeRtc(roomId: string, who: Who, boxed: string) {
+  private writeRtc(roomId: string, who: Who, boxed: string): Promise<void> {
     return this.writeBoundedString(
       PATH.rtc(roomId, who),
       this.rtcLabel(roomId, who),
@@ -240,7 +262,7 @@ export class RtdbRoomRepository implements RoomRepositoryPort {
     );
   }
 
-  private waitRtc(roomId: string, who: Who, timeoutMs: number) {
+  private waitRtc(roomId: string, who: Who, timeoutMs: number): Promise<string> {
     return this.waitBoundedString(
       PATH.rtc(roomId, who),
       this.rtcLabel(roomId, who),

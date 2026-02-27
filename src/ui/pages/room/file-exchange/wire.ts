@@ -8,7 +8,7 @@ const KIND_CONTROL = 1;
 const KIND_DATA = 2;
 
 const TRANSFER_ID_BYTES = 16;
-export const DATA_WIRE_HEADER_BYTES = 1 + TRANSFER_ID_BYTES + 4 + 1;
+export const DATA_WIRE_HEADER_BYTES: number = 1 + TRANSFER_ID_BYTES + 4 + 1;
 
 // CONTROL wire: [1][control-bytes...]
 export function encodeControlWire(controlBytes: Uint8Array): Uint8Array {

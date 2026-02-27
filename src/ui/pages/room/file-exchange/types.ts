@@ -6,29 +6,29 @@ export type FileId = Brand<string, 'FileId'>;
 
 export type HashAlg = 'sha256';
 
-export type FileHash = {
+export interface FileHash {
   alg: HashAlg;
   value: string;
-};
+}
 
-export type FileDesc = {
+export interface FileDesc {
   id: string;
   name: string;
   size: number;
   mime: string;
   mtime?: number;
   hash?: FileHash;
-};
+}
 
 export type TransferDir = 'send' | 'recv';
 
-export type TransferProgress = {
+export interface TransferProgress {
   dir: TransferDir;
   transferId: string;
   fileId: string;
   done: number;
   total: number;
-};
+}
 
 export type SessionErrorCode =
   | 'SESSION_CLOSED'
@@ -71,13 +71,13 @@ export type TransferCancelReason =
   | 'SESSION_CLOSED'
   | 'DISPOSED';
 
-export type SessionError = {
+export interface SessionError {
   scope: 'session' | 'transfer';
   code: SessionErrorCode | TransferFailureCode;
   transferId?: string;
   message: string;
   cause?: unknown;
-};
+}
 
 export type TransferTerminalEvent = {
   dir: TransferDir;
@@ -102,19 +102,19 @@ export type TransferTerminalEvent = {
     }
 );
 
-export type DownloadHandle = {
+export interface DownloadHandle {
   transferId: string;
   /** Resolves with Blob when completed (may use memory fallback). */
   result: Promise<Blob>;
   cancel: () => void;
-};
+}
 
-export type DownloadToSinkHandle = {
+export interface DownloadToSinkHandle {
   transferId: string;
   /** Resolves when sink was fully written and closed. */
   done: Promise<void>;
   cancel: () => void;
-};
+}
 
 export interface FileExchangeSession {
   state(): SessionState;

@@ -17,9 +17,9 @@ const K_START = 0x01;
 const K_CONT = 0x02;
 const K_END = 0x03;
 
-export type ReassemblerOpts = {
+export interface ReassemblerOpts {
   maxMessageBytes: number;
-};
+}
 
 export function* fragmentMessage(message: Uint8Array, maxFrameBytes: number): Iterable<Uint8Array> {
   if (maxFrameBytes < 8) throw new Error('maxFrameBytes too small');
@@ -86,6 +86,7 @@ export class Reassembler {
     this.maxMessageBytes = Math.floor(maxMessageBytes);
   }
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: todo refactor
   push(frame: Uint8Array): Uint8Array | null {
     if (frame.length < 1) throw new Error('empty transport frame');
 
@@ -115,7 +116,9 @@ export class Reassembler {
 
       if (total <= 0) throw new Error('Invalid total length');
       if (total > this.maxMessageBytes) {
-        throw new Error(`START total exceeds maxMessageBytes=${this.maxMessageBytes} (got ${total})`);
+        throw new Error(
+          `START total exceeds maxMessageBytes=${this.maxMessageBytes} (got ${total})`,
+        );
       }
       if (payload.length > total) throw new Error('START payload larger than total');
 

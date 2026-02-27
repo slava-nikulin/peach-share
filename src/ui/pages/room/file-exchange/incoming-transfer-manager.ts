@@ -44,15 +44,15 @@ type IncomingTransfer = {
   rejectDone: (error: unknown) => void;
 } & IncomingTimeoutState;
 
-type IncomingTransferManagerConfig = {
+interface IncomingTransferManagerConfig {
   maxConcurrentIncomingTransfers: number;
   maxBufferedIncomingBytes: number;
   metaTimeoutMs: number;
   idleTimeoutMs: number;
   hardTimeoutMs: number | null;
-};
+}
 
-type IncomingTransferManagerDeps = {
+interface IncomingTransferManagerDeps {
   getState: () => SessionState;
   getCurrentMaxFileBytes: () => number;
   sendControl: (msg: ControlMsgWithoutProtocol) => Promise<void>;
@@ -64,7 +64,7 @@ type IncomingTransferManagerDeps = {
     message: string,
     cause?: unknown,
   ) => void;
-};
+}
 
 export class IncomingTransferManager {
   private readonly transferTimeouts: TransferTimeoutManager;
@@ -201,7 +201,7 @@ export class IncomingTransferManager {
     return {
       transferId,
       done,
-      cancel: () => {
+      cancel: (): void => {
         this.cancelTransferById(transferId, 'USER_CANCELLED', 'cancelled by user');
       },
     };
@@ -268,14 +268,16 @@ export class IncomingTransferManager {
     transfer.state = 'receiving';
     this.transferTimeouts.clearIncomingMetaTimeout(transfer);
     this.armIncomingIdleTimeout(transfer);
-    safeCall(() => transfer.onMeta?.(transfer.meta!));
+    const transferMeta = transfer.meta;
+    if (!transferMeta) return;
+    safeCall(() => transfer.onMeta?.(transferMeta));
 
     this.deps.emitProgress({
       dir: 'recv',
       transferId,
       fileId: transfer.fileId,
       done: transfer.received,
-      total: transfer.meta.size,
+      total: transferMeta.size,
     });
 
     this.tryFinalizeIncoming(transfer, 'FILE_META');

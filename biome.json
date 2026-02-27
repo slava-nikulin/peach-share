@@ -117,7 +117,12 @@
 
       "complexity": {
         "noExcessiveCognitiveComplexity": "warn",
-        "noExcessiveLinesPerFunction": "warn",
+        "noExcessiveLinesPerFunction": {
+          "level": "warn",
+          "options": {
+            "maxLines": 120
+          }
+        },
         "noUselessFragments": "info",
         "noUselessTernary": "info",
         "useOptionalChain": "warn"
@@ -148,11 +153,15 @@
   },
   "overrides": [
     {
-      "includes": ["**/*.spec.ts"],
+      "includes": ["**/*.spec.ts", "**/*.test.ts", "**/*.e2e.ts", "**/tests/**"],
       "linter": {
         "rules": {
           "complexity": {
             "noExcessiveLinesPerFunction": "off"
+          },
+          "performance": {
+            "useTopLevelRegex": "off",
+            "noAwaitInLoops": "off"
           }
         }
       }

@@ -2,7 +2,10 @@ import { mergeConfig, type UserConfig, type UserConfigExport } from 'vite';
 import { defineConfig } from 'vitest/config';
 import viteConfig from './vite.config';
 
-function resolveViteConfig(config: UserConfigExport, mode: string): UserConfig | Promise<UserConfig> {
+function resolveViteConfig(
+  config: UserConfigExport,
+  mode: string,
+): UserConfig | Promise<UserConfig> {
   if (typeof config === 'function') {
     return config({
       command: 'serve',

@@ -2,19 +2,19 @@ import type { FirebaseApp, FirebaseOptions } from 'firebase/app';
 import type { Auth } from 'firebase/auth';
 import type { Database } from 'firebase/database';
 
-export type FirebaseAppInit = {
+export interface FirebaseAppInit {
   /** Чтобы тесты не залипали на единственном default app со старым конфигом */
   name: string;
   options: FirebaseOptions;
-};
+}
 
-export type FirebaseRtdbConnection = {
+export interface FirebaseRtdbConnection {
   app: FirebaseApp;
   auth: Auth;
   db: Database;
-};
+}
 
-export type ProdRtdbConfig = {
+export interface ProdRtdbConfig {
   app: FirebaseAppInit;
 
   /** Force RTDB transport to WebSockets only (without long-polling fallback). */
@@ -32,9 +32,9 @@ export type ProdRtdbConfig = {
      */
     debugToken?: string | boolean;
   };
-};
+}
 
-export type EmulatorRtdbConfig = {
+export interface EmulatorRtdbConfig {
   app: FirebaseAppInit;
 
   emulator: {
@@ -57,4 +57,4 @@ export type EmulatorRtdbConfig = {
     /** Иногда полезно для устранения залипаний на старых origin/namespace */
     // pruneFirebaseLocalStorage?: boolean;
   };
-};
+}

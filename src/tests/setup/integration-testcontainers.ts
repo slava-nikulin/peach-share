@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { get, onValue, ref, set, type DataSnapshot, type Database } from 'firebase/database';
+import { type Database, type DataSnapshot, get, onValue, ref, set } from 'firebase/database';
 import {
   DockerComposeEnvironment,
   type StartedDockerComposeEnvironment,
@@ -10,6 +10,9 @@ import {
 } from 'testcontainers';
 
 type GlobalWithIT = typeof globalThis & { __itEnv?: StartedDockerComposeEnvironment };
+interface RulesDisabledContext {
+  database(): unknown;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -22,7 +25,7 @@ async function waitInfoConnected(db: Database, timeoutMs: number): Promise<void>
     let settled = false;
     let unsub: (() => void) | undefined;
 
-    const cleanup = () => {
+    const cleanup = (): void => {
       try {
         unsub?.();
       } catch {
@@ -37,7 +40,7 @@ async function waitInfoConnected(db: Database, timeoutMs: number): Promise<void>
       reject(new Error(`Timed out waiting for .info/connected=true after ${timeoutMs}ms`));
     }, timeoutMs);
 
-    const onSnap = (s: DataSnapshot) => {
+    const onSnap = (s: DataSnapshot): void => {
       if (settled) return;
       if (s.exists() && s.val() === true) {
         settled = true;
@@ -84,7 +87,7 @@ async function waitForFirebaseClientReady(): Promise<void> {
       const uid = `it_probe_${Date.now()}_${attempt}`;
       const roomId = `it_probe_room_${Date.now()}_${attempt}`;
 
-      await probeEnv.withSecurityRulesDisabled(async (ctx: any) => {
+      await probeEnv.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
         const adminDb = ctx.database() as unknown as Database;
         await set(ref(adminDb, `/${uid}/create`), {
           room_id: roomId,
@@ -96,7 +99,7 @@ async function waitForFirebaseClientReady(): Promise<void> {
       let created = false;
 
       while (Date.now() < perAttemptDeadline) {
-        await probeEnv.withSecurityRulesDisabled(async (ctx: any) => {
+        await probeEnv.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
           const adminDb = ctx.database() as unknown as Database;
           const snap = await get(ref(adminDb, `/rooms/${roomId}/meta/state`));
           const state = snap.exists() ? Number(snap.val()) : Number.NaN;
@@ -107,7 +110,7 @@ async function waitForFirebaseClientReady(): Promise<void> {
         await sleep(100);
       }
 
-      await probeEnv.withSecurityRulesDisabled(async (ctx: any) => {
+      await probeEnv.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
         const adminDb = ctx.database() as unknown as Database;
         await set(ref(adminDb, `/${uid}`), null);
         await set(ref(adminDb, `/rooms/${roomId}`), null);
@@ -117,9 +120,7 @@ async function waitForFirebaseClientReady(): Promise<void> {
       await sleep(250);
     }
 
-    throw new Error(
-      `Timed out waiting for registerCreator trigger readiness after ${timeoutMs}ms`,
-    );
+    throw new Error(`Timed out waiting for registerCreator trigger readiness after ${timeoutMs}ms`);
   } finally {
     await probeEnv?.cleanup();
   }
@@ -150,7 +151,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
   g.__itEnv = env;
 
-  return async () => {
+  return async (): Promise<void> => {
     try {
       if (!keepDocker) {
         await env.down();

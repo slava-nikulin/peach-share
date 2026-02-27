@@ -53,7 +53,9 @@ export type NegotiationResult =
       code: 'NEGOTIATION_FAILED' | 'BUILD_MISMATCH';
     };
 
-export function createDefaultNegotiatedSessionSettings(cfg: NegotiationConfig): NegotiatedSessionSettings {
+export function createDefaultNegotiatedSessionSettings(
+  cfg: NegotiationConfig,
+): NegotiatedSessionSettings {
   return {
     protocol: PROTOCOL_ID,
     maxMessageBytes: cfg.transportMaxMessageBytes,

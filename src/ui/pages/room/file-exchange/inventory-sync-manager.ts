@@ -1,19 +1,19 @@
-import { type ControlMsg, type ControlMsgWithoutProtocol } from './protocol';
+import type { ControlMsg, ControlMsgWithoutProtocol } from './protocol';
 import type { FileDesc, SessionErrorCode, SessionState } from './types';
 
 type TimeoutHandle = ReturnType<typeof setTimeout>;
 
-type PendingInventoryDelta = {
+interface PendingInventoryDelta {
   addById: Map<string, FileDesc>;
   removeIds: Set<string>;
-};
+}
 
-type InventorySnapshotAssembly = {
+interface InventorySnapshotAssembly {
   snapshotId: string;
   inventoryVersion: number;
   totalParts: number;
   parts: Array<readonly FileDesc[] | undefined>;
-};
+}
 
 type InventoryControlType =
   | 'INVENTORY_SNAPSHOT'
@@ -23,10 +23,13 @@ type InventoryControlType =
   | 'INVENTORY_SNAPSHOT_PART'
   | 'INVENTORY_SNAPSHOT_END';
 
-type InventoryControlMsgWithoutProtocol = Extract<ControlMsgWithoutProtocol, { t: InventoryControlType }>;
+type InventoryControlMsgWithoutProtocol = Extract<
+  ControlMsgWithoutProtocol,
+  { t: InventoryControlType }
+>;
 type InventoryControlMsg = Extract<ControlMsg, { t: InventoryControlType }>;
 
-type InventorySyncManagerDeps = {
+interface InventorySyncManagerDeps {
   getState: () => SessionState;
   getLocalFiles: () => readonly FileDesc[];
   getPeerFiles: () => readonly FileDesc[];
@@ -36,12 +39,12 @@ type InventorySyncManagerDeps = {
   emitSessionError: (code: SessionErrorCode, message: string, cause?: unknown) => void;
   onPeerSnapshotReceived: () => void;
   createId: () => string;
-};
+}
 
-type InventorySyncManagerOpts = {
+interface InventorySyncManagerOpts {
   deltaDebounceMs?: number;
   maxSnapshotParts?: number;
-};
+}
 
 const DEFAULT_DELTA_DEBOUNCE_MS = 24;
 const DEFAULT_MAX_SNAPSHOT_PARTS = 100_000;
@@ -53,7 +56,10 @@ export class InventorySyncManager {
 
   private localInventoryVersion = 0;
   private peerInventoryVersion: number | null = null;
-  private pendingInventoryDelta: PendingInventoryDelta = { addById: new Map(), removeIds: new Set() };
+  private pendingInventoryDelta: PendingInventoryDelta = {
+    addById: new Map(),
+    removeIds: new Set(),
+  };
   private inventoryDeltaFlushTimer?: TimeoutHandle;
   private inventoryDeltaFlushScheduled: Promise<void> | null = null;
   private inventoryDeltaFlushSettlers?: {
@@ -64,10 +70,7 @@ export class InventorySyncManager {
   private pendingPeerSnapshot?: InventorySnapshotAssembly;
   private peerSnapshotReceived = false;
 
-  constructor(
-    deps: InventorySyncManagerDeps,
-    opts: InventorySyncManagerOpts = {},
-  ) {
+  constructor(deps: InventorySyncManagerDeps, opts: InventorySyncManagerOpts = {}) {
     this.deps = deps;
     this.deltaDebounceMs = opts.deltaDebounceMs ?? DEFAULT_DELTA_DEBOUNCE_MS;
     this.maxSnapshotParts = opts.maxSnapshotParts ?? DEFAULT_MAX_SNAPSHOT_PARTS;
@@ -77,7 +80,10 @@ export class InventorySyncManager {
     return this.peerSnapshotReceived;
   }
 
-  enqueueLocalInventoryDelta(mutation: { add?: readonly FileDesc[]; remove?: readonly string[] }): void {
+  enqueueLocalInventoryDelta(mutation: {
+    add?: readonly FileDesc[];
+    remove?: readonly string[];
+  }): void {
     for (const file of mutation.add ?? []) {
       this.pendingInventoryDelta.removeIds.delete(file.id);
       this.pendingInventoryDelta.addById.set(file.id, file);
@@ -110,7 +116,11 @@ export class InventorySyncManager {
         })
         .catch((error) => {
           this.inventoryDeltaFlushSettlers?.reject(error);
-          this.deps.emitSessionError('INVENTORY_SYNC_FAILED', 'Failed to flush pending inventory deltas', error);
+          this.deps.emitSessionError(
+            'INVENTORY_SYNC_FAILED',
+            'Failed to flush pending inventory deltas',
+            error,
+          );
         })
         .finally(() => {
           this.inventoryDeltaFlushScheduled = null;
@@ -176,7 +186,9 @@ export class InventorySyncManager {
     this.clearInventoryDeltaFlushState(error);
   }
 
-  private handlePeerInventorySnapshot(msg: Extract<InventoryControlMsg, { t: 'INVENTORY_SNAPSHOT' }>): void {
+  private handlePeerInventorySnapshot(
+    msg: Extract<InventoryControlMsg, { t: 'INVENTORY_SNAPSHOT' }>,
+  ): void {
     this.pendingPeerSnapshot = undefined;
 
     if (!isFiniteNonNegativeInteger(msg.inventoryVersion)) {
@@ -225,7 +237,9 @@ export class InventorySyncManager {
     pending.parts[msg.partIndex] = msg.files.slice();
   }
 
-  private handlePeerInventorySnapshotEnd(msg: Extract<InventoryControlMsg, { t: 'INVENTORY_SNAPSHOT_END' }>): void {
+  private handlePeerInventorySnapshotEnd(
+    msg: Extract<InventoryControlMsg, { t: 'INVENTORY_SNAPSHOT_END' }>,
+  ): void {
     const pending = this.pendingPeerSnapshot;
     if (!pending) {
       this.requestPeerInventoryResync('snapshot_end_without_begin');
@@ -267,11 +281,16 @@ export class InventorySyncManager {
     this.applyPeerSnapshot(files, msg.inventoryVersion);
   }
 
-  private handlePeerInventoryDelta(msg: Extract<InventoryControlMsg, { t: 'INVENTORY_DELTA' }>): void {
+  private handlePeerInventoryDelta(
+    msg: Extract<InventoryControlMsg, { t: 'INVENTORY_DELTA' }>,
+  ): void {
     const add = msg.add;
     const remove = msg.remove;
 
-    if (!isFiniteNonNegativeInteger(msg.baseVersion) || !isFiniteNonNegativeInteger(msg.nextVersion)) {
+    if (
+      !isFiniteNonNegativeInteger(msg.baseVersion) ||
+      !isFiniteNonNegativeInteger(msg.nextVersion)
+    ) {
       this.requestPeerInventoryResync('delta_missing_versions');
       return;
     }
@@ -314,13 +333,19 @@ export class InventorySyncManager {
 
     this.peerInventoryResyncRequested = true;
 
-    void this.deps.sendControl({
-      t: 'INVENTORY_RESYNC_REQUEST',
-      reason,
-    }).catch((error) => {
-      this.peerInventoryResyncRequested = false;
-      this.deps.emitSessionError('INVENTORY_SYNC_FAILED', 'Failed to request inventory resync', error);
-    });
+    void this.deps
+      .sendControl({
+        t: 'INVENTORY_RESYNC_REQUEST',
+        reason,
+      })
+      .catch((error) => {
+        this.peerInventoryResyncRequested = false;
+        this.deps.emitSessionError(
+          'INVENTORY_SYNC_FAILED',
+          'Failed to request inventory resync',
+          error,
+        );
+      });
   }
 
   private async flushLocalInventoryDeltasNow(): Promise<void> {
@@ -356,14 +381,22 @@ export class InventorySyncManager {
     }
   }
 
-  private async sendInventoryDeltaBatches(add: readonly FileDesc[], remove: readonly string[]): Promise<void> {
+  private async sendInventoryDeltaBatches(
+    add: readonly FileDesc[],
+    remove: readonly string[],
+  ): Promise<void> {
     let addOffset = 0;
     let removeOffset = 0;
 
     while (addOffset < add.length || removeOffset < remove.length) {
       const baseVersion = this.localInventoryVersion;
-      const chunk = this.takeNextInventoryDeltaChunk(add.slice(addOffset), remove.slice(removeOffset), baseVersion);
+      const chunk = this.takeNextInventoryDeltaChunk(
+        add.slice(addOffset),
+        remove.slice(removeOffset),
+        baseVersion,
+      );
 
+      // biome-ignore lint/performance/noAwaitInLoops: todo refactor
       await this.deps.sendControl(chunk.message);
 
       addOffset += chunk.addConsumed;
@@ -372,6 +405,7 @@ export class InventorySyncManager {
     }
   }
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: todo refactor
   private takeNextInventoryDeltaChunk(
     add: readonly FileDesc[],
     remove: readonly string[],
@@ -386,7 +420,10 @@ export class InventorySyncManager {
     let addConsumed = 0;
     let removeConsumed = 0;
 
-    const buildMessage = (): Extract<InventoryControlMsgWithoutProtocol, { t: 'INVENTORY_DELTA' }> => {
+    const buildMessage = (): Extract<
+      InventoryControlMsgWithoutProtocol,
+      { t: 'INVENTORY_DELTA' }
+    > => {
       return {
         t: 'INVENTORY_DELTA',
         add: chunkAdd.length > 0 ? chunkAdd : undefined,
@@ -432,7 +469,9 @@ export class InventorySyncManager {
         throw new Error(`inventory delta add item too large to fit controlMaxBytes: ${add[0].id}`);
       }
       if (remove[0]) {
-        throw new Error(`inventory delta remove item too large to fit controlMaxBytes: ${remove[0]}`);
+        throw new Error(
+          `inventory delta remove item too large to fit controlMaxBytes: ${remove[0]}`,
+        );
       }
       throw new Error('inventory delta chunking failed unexpectedly');
     }
@@ -462,6 +501,7 @@ export class InventorySyncManager {
       const files = parts[partIndex];
       if (!files) continue;
 
+      // biome-ignore lint/performance/noAwaitInLoops: todo refactor
       await this.deps.sendControl({
         t: 'INVENTORY_SNAPSHOT_PART',
         snapshotId,
@@ -491,7 +531,10 @@ export class InventorySyncManager {
 
         partFiles.push(candidate);
 
-        const testMessage: Extract<InventoryControlMsgWithoutProtocol, { t: 'INVENTORY_SNAPSHOT_PART' }> = {
+        const testMessage: Extract<
+          InventoryControlMsgWithoutProtocol,
+          { t: 'INVENTORY_SNAPSHOT_PART' }
+        > = {
           t: 'INVENTORY_SNAPSHOT_PART',
           snapshotId,
           partIndex: parts.length,
@@ -509,7 +552,9 @@ export class InventorySyncManager {
 
       if (partFiles.length === 0) {
         const fileId = files[offset]?.id ?? 'unknown';
-        throw new Error(`inventory snapshot file entry too large to fit controlMaxBytes: ${fileId}`);
+        throw new Error(
+          `inventory snapshot file entry too large to fit controlMaxBytes: ${fileId}`,
+        );
       }
 
       parts.push(partFiles);
@@ -565,5 +610,7 @@ function applyInventoryDelta(
 }
 
 function isFiniteNonNegativeInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 0;
+  return (
+    typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 0
+  );
 }

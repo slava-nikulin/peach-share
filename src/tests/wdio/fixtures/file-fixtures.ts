@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-const fixturesRoot = path.resolve(process.cwd(), 'src/tests/wdio/fixtures/files');
+const fixturesRoot: string = path.resolve(process.cwd(), 'src/tests/wdio/fixtures/files');
 
 export const roomFileFixtures = {
   ownerContract: {

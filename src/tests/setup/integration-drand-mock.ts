@@ -1,13 +1,12 @@
-/** biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: <explanation> */
 import http from 'node:http';
 import { afterAll, beforeAll } from 'vitest';
 
-type DrandMockState = {
+interface DrandMockState {
   baseUrl: string;
   beaconId: string;
   latestRound: number;
   requests: string[];
-};
+}
 
 type GlobalWithDrand = typeof globalThis & { __drandMock?: DrandMockState };
 
@@ -15,7 +14,7 @@ function signatureHexForRound(round: number): string {
   // Drand signature в реальности длиннее, но клиенту всё равно — он sha256(hexToBytes(signature)).
   // Сделаем 96 байт (192 hex chars), детерминированно от round.
   const buf = Buffer.alloc(96, round & 0xff);
-  return '0x' + buf.toString('hex');
+  return `0x${buf.toString('hex')}`;
 }
 
 let server: http.Server;
@@ -35,7 +34,7 @@ beforeAll(async () => {
 
     state.requests.push(`${req.method ?? 'GET'} ${url.pathname}`);
 
-    const respond = (round: number) => {
+    const respond = (round: number): void => {
       const body = JSON.stringify({
         round,
         signature: signatureHexForRound(round),

@@ -1,5 +1,5 @@
 /* @refresh reload */
-import process from 'process';
+import process from 'process/browser';
 import { render } from 'solid-js/web';
 import './index.css';
 import { App } from './app/App.tsx';

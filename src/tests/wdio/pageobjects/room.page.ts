@@ -96,19 +96,19 @@ class RoomPage extends Page {
     }, inputRef);
   }
 
-  public async waitForMyFile(fileName: string, timeout = 20_000): Promise<void> {
+  public async waitForMyFile(fileName: string, timeout: number = 20_000): Promise<void> {
     await this.waitForFileInSection('You', fileName, timeout);
   }
 
-  public async waitForGuestFile(fileName: string, timeout = 20_000): Promise<void> {
+  public async waitForGuestFile(fileName: string, timeout: number = 20_000): Promise<void> {
     await this.waitForFileInSection('Guest', fileName, timeout);
   }
 
-  public async waitForMyFileAbsent(fileName: string, timeout = 20_000): Promise<void> {
+  public async waitForMyFileAbsent(fileName: string, timeout: number = 20_000): Promise<void> {
     await this.waitForFileAbsentInSection('You', fileName, timeout);
   }
 
-  public async waitForGuestFileAbsent(fileName: string, timeout = 20_000): Promise<void> {
+  public async waitForGuestFileAbsent(fileName: string, timeout: number = 20_000): Promise<void> {
     await this.waitForFileAbsentInSection('Guest', fileName, timeout);
   }
 
@@ -132,7 +132,7 @@ class RoomPage extends Page {
     dir: 'send' | 'recv',
     fileName: string,
     status: 'preparing' | 'active' | 'done' | 'cancelled' | 'error',
-    timeout = 30_000,
+    timeout: number = 30_000,
   ): Promise<void> {
     await this.transfersCard.waitForDisplayed({ timeout: 7000 });
 

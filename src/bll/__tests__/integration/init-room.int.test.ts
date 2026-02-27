@@ -1,11 +1,10 @@
-/** biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: <explanation> */
 import { assertSucceeds } from '@firebase/rules-unit-testing';
 import { type Database, get, ref, set } from 'firebase/database';
 import { uint8ArrayToBase64 } from 'uint8array-extras';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { Argon2idNodeRoomIdKdf } from '../../../adapters/argon-kdf/argon2id.node';
+import { DrandOtpClient } from '../../../adapters/beacon/otp-drand';
 import { RtdbRoomRepository } from '../../../adapters/firebase/rtdb-room-repository';
-import { DrandOtpClient } from '../../../adapters/otp-drand';
+import { Argon2idNodeRoomIdKdf } from '../../../adapters/kdf/argon2id.node';
 
 import { getTestEnv } from '../../../tests/setup/integration-firebase';
 import { InitRoomUseCase } from '../../use-cases/init-room';
@@ -16,25 +15,29 @@ type GlobalWithDrand = typeof globalThis & {
 
 let kdf: Argon2idNodeRoomIdKdf;
 
+interface RulesDisabledContext {
+  database(): unknown;
+}
+
 async function waitForRoomCreated(params: {
   env: ReturnType<typeof getTestEnv>;
   roomId: string;
   timeoutMs?: number;
   intervalMs?: number;
-}) {
+}): Promise<unknown> {
   const { env, roomId, timeoutMs = 10_000, intervalMs = 100 } = params;
 
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     let room: unknown;
 
-    await env.withSecurityRulesDisabled(async (ctx: any) => {
+    await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
       const adminDb = ctx.database() as unknown as Database;
       const snap = await get(ref(adminDb, `/rooms/${roomId}`));
       room = snap.exists() ? snap.val() : undefined;
     });
 
-    if (room !== undefined) return room as any;
+    if (room !== undefined) return room;
 
     await new Promise((r) => setTimeout(r, intervalMs));
   }
@@ -56,11 +59,7 @@ describe('InitRoomUseCase integration: join when room exists', () => {
     const g = globalThis as GlobalWithDrand;
     if (!g.__drandMock) throw new Error('drand-mock not initialized');
 
-    const otp = new DrandOtpClient({
-      baseUrl: g.__drandMock.baseUrl,
-      beaconId: 'quicknet',
-      timeoutMs: 2_000,
-    });
+    const otp = new DrandOtpClient({});
     const uid = `u_${Math.random().toString(16).slice(2, 10)}`;
     const userDb = env.authenticatedContext(uid).database() as unknown as Database;
 

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  TransferTimeoutManager,
   type IncomingTimeoutState,
   type OutgoingTimeoutState,
+  TransferTimeoutManager,
 } from './transfer-timeout-manager';
 
 describe('transfer timeout manager', () => {

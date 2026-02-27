@@ -1,21 +1,21 @@
 type TimeoutHandle = ReturnType<typeof setTimeout>;
 
-export type IncomingTimeoutState = {
+export interface IncomingTimeoutState {
   timeoutMeta?: TimeoutHandle;
   timeoutIdle?: TimeoutHandle;
   timeoutHard?: TimeoutHandle;
-};
+}
 
-export type OutgoingTimeoutState = {
+export interface OutgoingTimeoutState {
   timeoutIdle?: TimeoutHandle;
   timeoutHard?: TimeoutHandle;
-};
+}
 
-export type TimeoutConfig = {
+export interface TimeoutConfig {
   metaTimeoutMs: number;
   idleTimeoutMs: number;
   hardTimeoutMs: number | null;
-};
+}
 
 export class TransferTimeoutManager {
   private readonly cfg: TimeoutConfig;

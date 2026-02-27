@@ -1,4 +1,3 @@
-/** biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: <explanation> */
 import type { FirebaseOptions } from 'firebase/app';
 import { DrandOtpClient } from '../adapters/beacon/otp-drand';
 import { createEmulatorRtdbConnection } from '../adapters/firebase/emulator';
@@ -7,7 +6,9 @@ import { RtdbOnlineRunner } from '../adapters/firebase/rtdb-online-runner';
 import { RtdbRoomRepository } from '../adapters/firebase/rtdb-room-repository';
 import { Argon2idBrowserKdf } from '../adapters/kdf/argon2id.browser';
 import { CpaceEngine } from '../adapters/pake-engine/cpace';
+import type { P2pChannel } from '../bll/ports/p2p-channel';
 import { CreateRoomUseCase } from '../bll/use-cases/create-room';
+import type { RoomInitial } from '../bll/use-cases/init-room';
 import { InitRoomUseCase } from '../bll/use-cases/init-room';
 import { JoinRoomUseCase } from '../bll/use-cases/join-room';
 
@@ -17,7 +18,14 @@ function must(env: ImportMetaEnv, key: string): string {
   return v;
 }
 
-export async function compose() {
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: todo refactor
+export async function compose(): Promise<{
+  bll: {
+    initRoom: { run: (prs: string) => Promise<RoomInitial> };
+    createRoom: { run: (roomId: string) => Promise<P2pChannel> };
+    joinRoom: { run: (roomId: string) => Promise<P2pChannel> };
+  };
+}> {
   const env = import.meta.env;
   const useEmulators = env.VITE_USE_EMULATORS === 'true';
   const forceRtdbWebSockets = env.VITE_FIREBASE_FORCE_WEBSOCKETS === 'true';
@@ -87,14 +95,6 @@ export async function compose() {
         const { SimplePeerEngine } = await import('../adapters/webrtc-engine/simple-peer');
         const pake = new CpaceEngine();
 
-        // const rtcConfig: RTCConfiguration | undefined = isOffline
-        //   ? { iceServers: [{ urls: `stun:${location.hostname}:3478` }] }
-        //   : {
-        //       iceServers: [
-        //         { urls: 'stun:stun.l.google.com:19302' },
-        //         { urls: 'stun:stun1.l.google.com:19302' },
-        //       ],
-        //     };
         const webrtc = new SimplePeerEngine();
         const pakeTimeoutMs = 5_000;
         const rtcTimeoutMs = 20_000;

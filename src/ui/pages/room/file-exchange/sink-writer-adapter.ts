@@ -1,16 +1,12 @@
 import type { TransferFailureCode } from './types';
 
-type TransferErrorFactory = (
-  code: TransferFailureCode,
-  message: string,
-  cause?: unknown,
-) => Error;
+type TransferErrorFactory = (code: TransferFailureCode, message: string, cause?: unknown) => Error;
 
-export type InMemorySinkWriter = {
+export interface InMemorySinkWriter {
   sink: WritableStream<Uint8Array>;
   toBlob: (mime: string) => Blob;
   clear: () => void;
-};
+}
 
 export function createInMemorySinkWriter(
   maxBytes: number,
@@ -21,7 +17,7 @@ export function createInMemorySinkWriter(
 
   return {
     sink: new WritableStream<Uint8Array>({
-      write(chunk): void {
+      write(chunk: Uint8Array): void {
         const nextTotal = total + chunk.length;
         if (nextTotal > maxBytes) {
           throw createError(

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { HASH_MODE_SHA256_END, PROTOCOL_ID, type HelloMsg } from './protocol';
+import { HASH_MODE_SHA256_END, type HelloMsg, PROTOCOL_ID } from './protocol';
 import {
   buildLocalHelloCapabilities,
   createDefaultNegotiatedSessionSettings,
   negotiateSessionFromHello,
 } from './session-negotiation';
 
-const baseConfig = {
+const baseConfig: Parameters<typeof buildLocalHelloCapabilities>[0] = {
   transportMaxMessageBytes: 64 * 1024,
   fileChunkBytes: 8 * 1024,
   maxFileBytes: 512 * 1024 * 1024,

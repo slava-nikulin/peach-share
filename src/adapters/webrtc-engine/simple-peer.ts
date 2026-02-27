@@ -1,14 +1,18 @@
-import SimplePeer, { type Instance as PeerInstance, type Options as PeerOptions, type SignalData } from 'simple-peer';
+import SimplePeer, {
+  type Instance as PeerInstance,
+  type Options as PeerOptions,
+  type SignalData,
+} from 'simple-peer';
 import type { P2pChannel } from '../../bll/ports/p2p-channel';
 import type { WebRtcPort, WebRtcRole, WebRtcSessionId, WebRtcSignal } from '../../bll/ports/webrtc';
 import { SimplePeerChannel } from './simple-peer-channel';
 
-type Deferred<T> = {
+interface Deferred<T> {
   promise: Promise<T>;
   resolve: (v: T) => void;
   reject: (e: unknown) => void;
   settled: boolean;
-};
+}
 
 function deferred<T>(): Deferred<T> {
   let resolve!: (v: T) => void;
@@ -18,12 +22,12 @@ function deferred<T>(): Deferred<T> {
       resolve = res;
       reject = rej;
     }),
-    resolve: (v) => {
+    resolve: (v: T): void => {
       if (d.settled) return;
       d.settled = true;
       resolve(v);
     },
-    reject: (e) => {
+    reject: (e: unknown): void => {
       if (d.settled) return;
       d.settled = true;
       reject(e);
@@ -73,17 +77,17 @@ async function withTimeout<T>(
   }
 }
 
-type Session = {
+interface Session {
   role: WebRtcRole;
   peer: PeerInstance;
   offer?: Deferred<WebRtcSignal>; // only initiator
   connected?: Deferred<void>; // after acceptAnswer/generateAnswer
-};
+}
 
-type SimplePeerEngineOpts = {
+interface SimplePeerEngineOpts {
   rtcConfig?: RTCConfiguration;
   wrtc?: PeerOptions['wrtc'];
-};
+}
 
 export class SimplePeerEngine implements WebRtcPort {
   private readonly sessions = new Map<WebRtcSessionId, Session>();

@@ -70,8 +70,11 @@ function setWebSocketsOnly(): void {
 }
 
 export function forceSecureRepo(db: Database): void {
-  const anyDb = db as any;
-  const repo = anyDb._repo ?? anyDb.repo_;
+  const dbLike = db as Database & {
+    _repo?: { repoInfo_?: { secure?: boolean }; repoInfo?: { secure?: boolean } };
+    repo_?: { repoInfo_?: { secure?: boolean }; repoInfo?: { secure?: boolean } };
+  };
+  const repo = dbLike._repo ?? dbLike.repo_;
   const repoInfo = repo?.repoInfo_ ?? repo?.repoInfo;
 
   if (repoInfo && typeof repoInfo.secure === 'boolean') {

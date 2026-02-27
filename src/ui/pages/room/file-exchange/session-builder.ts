@@ -4,17 +4,17 @@ import { IncomingTransferManager } from './incoming-transfer-manager';
 import { InventorySyncManager } from './inventory-sync-manager';
 import { MessageTransport } from './message-transport';
 import { OutgoingTransferManager } from './outgoing-transfer-manager';
-import { resolveConfig, type FileExchangeConfig, type ResolvedConfig } from './session-config';
-import {
-  type ControlMsg,
-  type ControlMsgWithoutProtocol,
-  type FileMetaMsg,
-  type HelloMsg,
-  type Protocol,
+import type {
+  ControlMsg,
+  ControlMsgWithoutProtocol,
+  FileMetaMsg,
+  HelloMsg,
+  Protocol,
 } from './protocol';
+import { type FileExchangeConfig, type ResolvedConfig, resolveConfig } from './session-config';
 import {
-  buildLocalHelloMessage,
   buildLocalHelloCapabilities,
+  buildLocalHelloMessage,
   createDefaultNegotiatedSessionSettings,
   isSameNegotiatedSessionSettings,
   type NegotiatedSessionSettings,
@@ -27,8 +27,8 @@ import type {
   DownloadHandle,
   DownloadToSinkHandle,
   FileDesc,
-  FileHash,
   FileExchangeSession,
+  FileHash,
   SessionError,
   SessionErrorCode,
   SessionState,
@@ -37,13 +37,7 @@ import type {
   TransferProgress,
   TransferTerminalEvent,
 } from './types';
-import {
-  bytes16ToB64u,
-  decodeWire,
-  encodeControlWire,
-  newId16,
-  transferIdFrom16,
-} from './wire';
+import { bytes16ToB64u, decodeWire, encodeControlWire, newId16, transferIdFrom16 } from './wire';
 
 type IntervalHandle = ReturnType<typeof setInterval>;
 
@@ -109,7 +103,7 @@ class FileExchangeSessionImpl implements FileExchangeSession {
       maxFrameBytes: this.cfg.transportMaxFrameBytes,
       maxMessageBytes: this.cfg.transportMaxMessageBytes,
       yieldEveryFrames: 8,
-      onTransportError: (error) => this.handleTransportError(error),
+      onTransportError: (error: unknown): void => this.handleTransportError(error),
     });
 
     this.unsubTransportMessage = this.transport.onMessage(this.handleInboundMessage);
@@ -118,17 +112,19 @@ class FileExchangeSessionImpl implements FileExchangeSession {
     });
 
     this.inventorySync = new InventorySyncManager({
-      getState: () => this.stateValue,
-      getLocalFiles: () => this.localIndex,
-      getPeerFiles: () => this.peerIndex,
-      setPeerFiles: (files) => {
+      getState: (): SessionState => this.stateValue,
+      getLocalFiles: (): FileDesc[] => this.localIndex,
+      getPeerFiles: (): FileDesc[] => this.peerIndex,
+      setPeerFiles: (files: readonly FileDesc[]): void => {
         this.peerIndex = files.slice();
         this.peerEmitter.emit(this.peerIndex);
       },
-      sendControl: (msg) => this.sendControl(msg),
-      canSendControlMessage: (msg) => this.canSendControlMessage(msg),
-      emitSessionError: (code, message, cause) => this.emitSessionError(code, message, cause),
-      onPeerSnapshotReceived: () => this.stopInventoryResend(),
+      sendControl: (msg: ControlMsgWithoutProtocol): Promise<void> => this.sendControl(msg),
+      canSendControlMessage: (msg: ControlMsgWithoutProtocol): boolean =>
+        this.canSendControlMessage(msg),
+      emitSessionError: (code: SessionErrorCode, message: string, cause?: unknown): void =>
+        this.emitSessionError(code, message, cause),
+      onPeerSnapshotReceived: (): void => this.stopInventoryResend(),
       createId,
     });
     this.incomingTransfers = new IncomingTransferManager(
@@ -140,13 +136,17 @@ class FileExchangeSessionImpl implements FileExchangeSession {
         hardTimeoutMs: this.cfg.hardTimeoutMs,
       },
       {
-        getState: () => this.stateValue,
-        getCurrentMaxFileBytes: () => this.currentMaxFileBytes(),
-        sendControl: (msg) => this.sendControl(msg),
-        emitProgress: (event) => this.progressEmitter.emit(event),
-        emitTerminal: (event) => this.terminalEmitter.emit(event),
-        emitTransferError: (transferId, code, message, cause) =>
-          this.emitTransferError(transferId, code, message, cause),
+        getState: (): SessionState => this.stateValue,
+        getCurrentMaxFileBytes: (): number => this.currentMaxFileBytes(),
+        sendControl: (msg: ControlMsgWithoutProtocol): Promise<void> => this.sendControl(msg),
+        emitProgress: (event: TransferProgress): void => this.progressEmitter.emit(event),
+        emitTerminal: (event: TransferTerminalEvent): void => this.terminalEmitter.emit(event),
+        emitTransferError: (
+          transferId: string,
+          code: TransferFailureCode,
+          message: string,
+          cause?: unknown,
+        ): void => this.emitTransferError(transferId, code, message, cause),
       },
     );
     this.outgoingTransfers = new OutgoingTransferManager(
@@ -156,17 +156,23 @@ class FileExchangeSessionImpl implements FileExchangeSession {
         hardTimeoutMs: this.cfg.hardTimeoutMs,
       },
       {
-        getState: () => this.stateValue,
-        getCurrentMaxFileBytes: () => this.currentMaxFileBytes(),
-        getNegotiatedSettings: () => this.currentNegotiatedSettings(),
-        getLocalFile: (fileId) => this.localStore.get(fileId),
-        sendControl: (msg) => this.sendControl(msg),
-        sendDataWire: (wire) => this.transport.sendMessage(wire, { priority: 'data' }),
-        emitProgress: (event) => this.progressEmitter.emit(event),
-        emitTerminal: (event) => this.terminalEmitter.emit(event),
-        emitTransferError: (transferId, code, message, cause) =>
-          this.emitTransferError(transferId, code, message, cause),
-        emitSessionError: (code, message, cause) => this.emitSessionError(code, message, cause),
+        getState: (): SessionState => this.stateValue,
+        getCurrentMaxFileBytes: (): number => this.currentMaxFileBytes(),
+        getNegotiatedSettings: (): NegotiatedSessionSettings => this.currentNegotiatedSettings(),
+        getLocalFile: (fileId: string): File | undefined => this.localStore.get(fileId),
+        sendControl: (msg: ControlMsgWithoutProtocol): Promise<void> => this.sendControl(msg),
+        sendDataWire: (wire: Uint8Array): Promise<void> =>
+          this.transport.sendMessage(wire, { priority: 'data' }),
+        emitProgress: (event: TransferProgress): void => this.progressEmitter.emit(event),
+        emitTerminal: (event: TransferTerminalEvent): void => this.terminalEmitter.emit(event),
+        emitTransferError: (
+          transferId: string,
+          code: TransferFailureCode,
+          message: string,
+          cause?: unknown,
+        ): void => this.emitTransferError(transferId, code, message, cause),
+        emitSessionError: (code: SessionErrorCode, message: string, cause?: unknown): void =>
+          this.emitSessionError(code, message, cause),
       },
     );
 
@@ -222,7 +228,11 @@ class FileExchangeSessionImpl implements FileExchangeSession {
     try {
       await this.inventorySync.flushLocalInventoryDeltasSoon();
     } catch (error) {
-      this.emitSessionError('INVENTORY_SYNC_FAILED', 'Failed to publish local inventory changes', error);
+      this.emitSessionError(
+        'INVENTORY_SYNC_FAILED',
+        'Failed to publish local inventory changes',
+        error,
+      );
       throw error;
     }
   }
@@ -261,11 +271,15 @@ class FileExchangeSessionImpl implements FileExchangeSession {
   }
 
   requestDownload(fileId: string): DownloadHandle {
-    let mimeHint = this.peerIndex.find((file) => file.id === fileId)?.mime || 'application/octet-stream';
+    let mimeHint =
+      this.peerIndex.find((file) => file.id === fileId)?.mime || 'application/octet-stream';
 
-    const memorySink = createInMemorySinkWriter(this.currentMaxFileBytes(), createTransferException);
+    const memorySink = createInMemorySinkWriter(
+      this.currentMaxFileBytes(),
+      createTransferException,
+    );
     const handle = this.requestDownloadToInternal(fileId, memorySink.sink, {
-      onMeta: (meta) => {
+      onMeta: (meta: FileDesc): void => {
         mimeHint = meta.mime;
       },
     });
@@ -317,7 +331,7 @@ class FileExchangeSessionImpl implements FileExchangeSession {
     return {
       transferId,
       done: handle.done,
-      cancel: () => {
+      cancel: (): void => {
         this.cancelTransferInternal(transferId, {
           reason: 'USER_CANCELLED',
           message: 'cancelled by user',
@@ -497,7 +511,7 @@ class FileExchangeSessionImpl implements FileExchangeSession {
     };
   }
 
-  private negotiateFromHello(msg: HelloMsg) {
+  private negotiateFromHello(msg: HelloMsg): ReturnType<typeof negotiateSessionFromHello> {
     return negotiateSessionFromHello(this.localHelloCapabilities, this.cfg.appBuildId, msg);
   }
 
@@ -532,7 +546,11 @@ class FileExchangeSessionImpl implements FileExchangeSession {
     try {
       transferId = transferIdFrom16(transferId16);
     } catch (error) {
-      this.emitSessionError('PROTOCOL_VIOLATION', 'Received malformed transfer id in DATA frame', error);
+      this.emitSessionError(
+        'PROTOCOL_VIOLATION',
+        'Received malformed transfer id in DATA frame',
+        error,
+      );
       return;
     }
 
@@ -554,8 +572,16 @@ class FileExchangeSessionImpl implements FileExchangeSession {
     transferId: string,
     opts: { reason: TransferCancelReason; message: string; notifyPeer: boolean },
   ): void {
-    const incomingAffected = this.incomingTransfers.cancelTransferById(transferId, opts.reason, opts.message);
-    const outgoingAffected = this.outgoingTransfers.cancelTransferById(transferId, opts.reason, opts.message);
+    const incomingAffected = this.incomingTransfers.cancelTransferById(
+      transferId,
+      opts.reason,
+      opts.message,
+    );
+    const outgoingAffected = this.outgoingTransfers.cancelTransferById(
+      transferId,
+      opts.reason,
+      opts.message,
+    );
 
     if ((incomingAffected || outgoingAffected) && opts.notifyPeer) {
       void this.sendControl({
@@ -721,7 +747,11 @@ function safeCall(fn: (() => void) | undefined): void {
 
 type Listener<T> = (value: T) => void;
 
-function createEmitter<T>() {
+function createEmitter<T>(): {
+  emit(value: T): void;
+  subscribe(listener: Listener<T>): () => void;
+  clear(): void;
+} {
   const listeners = new Set<Listener<T>>();
 
   return {
@@ -733,7 +763,9 @@ function createEmitter<T>() {
 
     subscribe(listener: Listener<T>): () => void {
       listeners.add(listener);
-      return () => listeners.delete(listener);
+      return (): void => {
+        listeners.delete(listener);
+      };
     },
 
     clear(): void {

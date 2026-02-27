@@ -1,4 +1,3 @@
-/** biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: <explanation> */
 import { expect } from '@wdio/globals';
 import { roomFileFixtures } from '../fixtures/file-fixtures';
 import { homePageGuest, homePageOwner } from '../pageobjects/home.page';

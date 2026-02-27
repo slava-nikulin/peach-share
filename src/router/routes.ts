@@ -13,7 +13,9 @@ const Room: Component = lazy(async () => {
 //   return { default: module.RoomNavBar };
 // });
 
-type RouteInfo = { navBar?: Component };
+interface RouteInfo {
+  navBar?: Component;
+}
 
 export const routes: RouteDefinition[] = [
   {

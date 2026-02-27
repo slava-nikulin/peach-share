@@ -1,5 +1,7 @@
 // src/adapters/kdf/argon2id.node.ts
+// biome-ignore lint/nursery/noUnresolvedImports: Node built-in for node-only adapter.
 import fs from 'node:fs';
+// biome-ignore lint/nursery/noUnresolvedImports: Node built-in for node-only adapter.
 import path from 'node:path';
 import setupWasm from 'argon2id/lib/setup.js';
 import type { RoomIdKdfPort } from '../../bll/ports/room-id-kdf';
@@ -15,7 +17,7 @@ type Argon2idFn = (params: {
   secret?: Uint8Array;
 }) => Uint8Array;
 
-function resolveFromPkg(rel: string) {
+function resolveFromPkg(rel: string): string {
   // Устойчиво для pnpm: находим реальную папку пакета через package.json. [web:90]
   return path.join(path.dirname(require.resolve('argon2id/package.json')), rel);
 }

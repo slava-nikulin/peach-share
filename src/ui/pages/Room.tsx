@@ -1,4 +1,4 @@
-/** biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: <explanation> */
+/** biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: todo refactor */
 import { useLocation, useParams } from '@solidjs/router';
 import type { JSX } from 'solid-js';
 import { createSignal, onCleanup, onMount, Show } from 'solid-js';
@@ -11,12 +11,12 @@ import { RoomWorkspace } from './room/components/RoomWorkspace';
 type RoomErrorKind = 'invalid_link' | 'expired_session' | 'operation_failed';
 type View = 'error' | 'loading' | 'content';
 
-type RoomNavState = {
+interface RoomNavState {
   start: true;
   intent: RoomIntent;
   roomId: string;
   nonce: string;
-};
+}
 
 const SS_PREFIX = 'room:visited:';
 
@@ -53,6 +53,7 @@ export function Room(): JSX.Element {
     }
   };
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: todo refactor
   const buildOperationFailureText = (err: unknown): string => {
     const errorName = err instanceof Error ? err.name : typeof err;
     const errorMessage =
@@ -95,7 +96,7 @@ export function Room(): JSX.Element {
     ].join('\n');
   };
 
-  const showError = (kind: RoomErrorKind, err?: unknown) => {
+  const showError = (kind: RoomErrorKind, err?: unknown): void => {
     if (kind === 'invalid_link') {
       setErrorTitle('Invalid room link');
       setErrorText(
@@ -163,7 +164,7 @@ export function Room(): JSX.Element {
   onMount(() => {
     let runVersion = 0;
 
-    const runEntry = () => {
+    const runEntry = (): void => {
       const currentRun = ++runVersion;
 
       try {
@@ -191,7 +192,7 @@ export function Room(): JSX.Element {
 
     runEntry();
 
-    const onPop = () => queueMicrotask(runEntry);
+    const onPop = (): void => queueMicrotask(runEntry);
     window.addEventListener('popstate', onPop);
 
     onCleanup(() => {
@@ -219,7 +220,10 @@ export function Room(): JSX.Element {
       {/* 3) CONTENT */}
 
       <Show when={view() === 'content' && channel()}>
-        {(ch) => <RoomWorkspace channel={ch()!} />}
+        {(ch: () => P2pChannel | null) => {
+          const value = ch();
+          return value ? <RoomWorkspace channel={value} /> : null;
+        }}
       </Show>
     </main>
   );

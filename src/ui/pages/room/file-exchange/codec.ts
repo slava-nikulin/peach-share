@@ -1,12 +1,12 @@
 import { type ControlMsg, isControlMsg } from './protocol';
 
-const te = new TextEncoder();
-const td = new TextDecoder();
+const te: TextEncoder = new TextEncoder();
+const td: TextDecoder = new TextDecoder();
 
-export type Codec = {
+export interface Codec {
   encodeControl(msg: ControlMsg): Uint8Array;
   decodeControl(bytes: Uint8Array): ControlMsg;
-};
+}
 
 export function createJsonCodec(opts: { maxBytes: number }): Codec {
   const { maxBytes } = opts;

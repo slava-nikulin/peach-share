@@ -15,12 +15,12 @@ export type SendPriority = 'control' | 'data';
 type Unsub = () => void;
 type MsgHandler = (msg: Uint8Array) => void;
 
-type SendJob = {
+interface SendJob {
   message: Uint8Array;
   priority: SendPriority;
   resolve: () => void;
   reject: (error: unknown) => void;
-};
+}
 
 export class MessageTransport {
   private readonly subs = new Set<MsgHandler>();
@@ -57,10 +57,14 @@ export class MessageTransport {
     this.reassembler = new Reassembler({ maxMessageBytes: this.maxMessageBytes });
 
     if (channel.readable.locked) {
-      throw new Error('P2pChannel readable stream is already locked; dispose previous session first');
+      throw new Error(
+        'P2pChannel readable stream is already locked; dispose previous session first',
+      );
     }
     if (channel.writable.locked) {
-      throw new Error('P2pChannel writable stream is already locked; dispose previous session first');
+      throw new Error(
+        'P2pChannel writable stream is already locked; dispose previous session first',
+      );
     }
 
     this.reader = channel.readable.getReader();
@@ -77,7 +81,7 @@ export class MessageTransport {
     if (this.disposed) return noop;
 
     this.subs.add(cb);
-    return () => {
+    return (): void => {
       this.subs.delete(cb);
     };
   }
@@ -115,7 +119,7 @@ export class MessageTransport {
 
   createSendSink(opts?: { onAfterWrite?: (msg: Uint8Array) => void }): WritableStream<Uint8Array> {
     return new WritableStream<Uint8Array>({
-      write: async (msg): Promise<void> => {
+      write: async (msg: Uint8Array): Promise<void> => {
         await this.sendMessage(msg, { priority: 'data' });
         opts?.onAfterWrite?.(msg);
       },
@@ -176,6 +180,7 @@ export class MessageTransport {
     });
   }
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: todo refactor
   private async runSendPump(): Promise<void> {
     while (!this.disposed) {
       const job = this.shiftSendJob();
@@ -201,6 +206,7 @@ export class MessageTransport {
 
           frameCount += 1;
           if (queuedWriteBytes >= this.maxQueuedWriteBytes) {
+            // biome-ignore lint/performance/noAwaitInLoops: todo refactor
             await flushQueuedWrites();
           }
 
@@ -226,7 +232,10 @@ export class MessageTransport {
       return undefined;
     }
 
-    if (hasControl && (!hasData || this.consecutiveControlJobsSent < this.maxConsecutiveControlJobs)) {
+    if (
+      hasControl &&
+      (!hasData || this.consecutiveControlJobsSent < this.maxConsecutiveControlJobs)
+    ) {
       this.consecutiveControlJobsSent = Math.min(
         this.maxConsecutiveControlJobs,
         this.consecutiveControlJobsSent + 1,
@@ -258,9 +267,11 @@ export class MessageTransport {
     }
   }
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: todo refactor
   private async runInboundLoop(): Promise<void> {
     try {
       while (!this.disposed) {
+        // biome-ignore lint/performance/noAwaitInLoops: todo refactor
         const { value, done } = await this.reader.read();
         if (done) break;
         if (!value || value.length === 0) continue;

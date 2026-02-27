@@ -5,7 +5,7 @@ import { hmac } from '@noble/hashes/hmac.js';
 import { sha256, sha512 } from '@noble/hashes/sha2.js';
 import { base64ToUint8Array, concatUint8Arrays, uint8ArrayToBase64 } from 'uint8array-extras';
 
-const te = new TextEncoder();
+const te: TextEncoder = new TextEncoder();
 
 type WebRtcSignalKind = 'offer' | 'answer';
 

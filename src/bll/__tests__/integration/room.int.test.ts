@@ -1,5 +1,6 @@
 /** biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: integration-e2e */
 
+// biome-ignore lint/nursery/noUnresolvedImports: Node built-in in integration test runtime.
 import { randomBytes } from 'node:crypto';
 import { type Database, type DataSnapshot, get, onValue, ref } from 'firebase/database';
 import { uint8ArrayToBase64 } from 'uint8array-extras';
@@ -13,6 +14,14 @@ import { getTestEnv } from '../../../tests/setup/integration-firebase';
 import type { P2pChannel } from '../../ports/p2p-channel';
 import { CreateRoomUseCase } from '../../use-cases/create-room';
 import { JoinRoomUseCase } from '../../use-cases/join-room';
+
+interface RulesDisabledContext {
+  database(): unknown;
+}
+
+interface RulesDisabledEnv {
+  withSecurityRulesDisabled<T>(cb: (ctx: RulesDisabledContext) => Promise<T>): Promise<T>;
+}
 
 function toU8(x: unknown): Uint8Array {
   if (x instanceof Uint8Array) return new Uint8Array(x);
@@ -58,7 +67,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 async function waitInfoConnected(
   db: Database,
   expected: boolean,
-  timeoutMs = 7_000,
+  timeoutMs: number = 7_000,
 ): Promise<void> {
   const r = ref(db, '.info/connected');
 
@@ -66,7 +75,7 @@ async function waitInfoConnected(
     let settled = false;
     let unsub: (() => void) | undefined;
 
-    const cleanup = () => {
+    const cleanup = (): void => {
       try {
         unsub?.();
       } catch {}
@@ -79,7 +88,7 @@ async function waitInfoConnected(
       reject(new Error(`Timed out waiting for .info/connected=${expected} after ${timeoutMs}ms`));
     }, timeoutMs);
 
-    const onSnap = (s: DataSnapshot) => {
+    const onSnap = (s: DataSnapshot): void => {
       if (settled) return;
       if (s.exists() && s.val() === expected) {
         settled = true;
@@ -100,11 +109,11 @@ async function waitInfoConnected(
 }
 
 async function waitRoomStateAtLeastAdmin(
-  env: any,
+  env: RulesDisabledEnv,
   roomId: string,
   minState: number,
-  timeoutMs = 15_000,
-  intervalMs = 100,
+  timeoutMs: number = 15_000,
+  intervalMs: number = 100,
 ): Promise<number> {
   const start = Date.now();
   let last: unknown;
@@ -112,7 +121,7 @@ async function waitRoomStateAtLeastAdmin(
   while (Date.now() - start < timeoutMs) {
     let stateVal: unknown;
 
-    await env.withSecurityRulesDisabled(async (ctx: any) => {
+    await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
       const adminDb = ctx.database() as unknown as Database;
       const snap = await get(ref(adminDb, `/rooms/${roomId}/meta/state`));
       stateVal = snap.exists() ? snap.val() : undefined;
@@ -134,10 +143,10 @@ async function waitRoomStateAtLeastAdmin(
 }
 
 async function waitRoomDeletedAdmin(
-  env: any,
+  env: RulesDisabledEnv,
   roomId: string,
-  timeoutMs = 20_000,
-  intervalMs = 150,
+  timeoutMs: number = 20_000,
+  intervalMs: number = 150,
 ): Promise<void> {
   const start = Date.now();
   let last: unknown;
@@ -146,7 +155,7 @@ async function waitRoomDeletedAdmin(
     let exists = true;
     let val: unknown;
 
-    await env.withSecurityRulesDisabled(async (ctx: any) => {
+    await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
       const adminDb = ctx.database() as unknown as Database;
       const snap = await get(ref(adminDb, `/rooms/${roomId}`));
       exists = snap.exists();
@@ -167,9 +176,9 @@ async function waitRoomDeletedAdmin(
 }
 
 describe('rooms handshake integration (happy path)', () => {
-  const mkUid = (p: string) => `${p}_${Math.random().toString(16).slice(2, 10)}`;
+  const mkUid = (p: string): string => `${p}_${Math.random().toString(16).slice(2, 10)}`;
 
-  const mkRoomIdB64u = () => {
+  const mkRoomIdB64u = (): string => {
     // base64url, безопасно для RTDB key и для base64ToUint8Array()
     return uint8ArrayToBase64(randomBytes(16), { urlSafe: true });
   };
@@ -182,7 +191,7 @@ describe('rooms handshake integration (happy path)', () => {
     const roomId = mkRoomIdB64u();
 
     // initial: комнаты не существует
-    await env.withSecurityRulesDisabled(async (ctx: any) => {
+    await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
       const adminDb = ctx.database() as unknown as Database;
       const snap = await get(ref(adminDb, `/rooms/${roomId}`));
       expect(snap.exists()).toBe(false);
@@ -198,7 +207,7 @@ describe('rooms handshake integration (happy path)', () => {
     const responderRunner = new RtdbOnlineRunner(responderDb);
 
     const wrtcMod = await import('@avahq/wrtc');
-    const wrtc = (wrtcMod as any).default ?? wrtcMod;
+    const wrtc = (wrtcMod as { default?: unknown }).default ?? wrtcMod;
 
     // ВАЖНО: если не починил SimplePeerEngine (см. замечание выше), этот rtcConfig сейчас НЕ применяется.
     const rtcConfig: RTCConfiguration = { iceServers: [] };

@@ -1,10 +1,11 @@
-import { fileURLToPath } from 'node:url';
+/** biome-ignore-all lint/performance/useTopLevelRegex: this is config */
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 import solid from 'vite-plugin-solid';
 
-const rootDir = dirname(fileURLToPath(import.meta.url));
+const rootDir: string = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(({ mode }) => {
   const isOfflineMode = mode === 'offline';

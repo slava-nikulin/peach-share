@@ -30,17 +30,19 @@ function createLinkedChannels(): { a: P2pChannel; b: P2pChannel } {
     bSubs.clear();
   };
 
-  const mkOnClose = (subs: Set<() => void>) => (cb: () => void): (() => void) => {
-    if (closed) {
-      queueMicrotask(cb);
-      return () => {};
-    }
+  const mkOnClose =
+    (subs: Set<() => void>) =>
+    (cb: () => void): (() => void) => {
+      if (closed) {
+        queueMicrotask(cb);
+        return () => {};
+      }
 
-    subs.add(cb);
-    return () => {
-      subs.delete(cb);
+      subs.add(cb);
+      return () => {
+        subs.delete(cb);
+      };
     };
-  };
 
   const a: P2pChannel = {
     readable: bToA.readable,

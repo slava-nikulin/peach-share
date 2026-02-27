@@ -1,13 +1,13 @@
 import type { FileDesc, FileHash, HashAlg } from './types';
 
 export const PROTOCOL_ID = 'fx/2' as const;
-export const PROTOCOL_V2_ID = PROTOCOL_ID;
+export const PROTOCOL_V2_ID: Protocol = PROTOCOL_ID;
 export type Protocol = typeof PROTOCOL_ID;
 
 export const HASH_MODE_SHA256_END = 'sha256-end' as const;
 export type HashMode = typeof HASH_MODE_SHA256_END;
 
-export type HelloCapabilities = {
+export interface HelloCapabilities {
   maxMessageBytes: number;
   chunkBytes: number;
   maxFileBytes: number;
@@ -19,70 +19,70 @@ export type HelloCapabilities = {
     versioning: boolean;
     paging: boolean;
   };
-};
+}
 
-export type HelloMsg = {
+export interface HelloMsg {
   p: Protocol;
   t: 'HELLO';
   sessionId: string;
   appBuildId: string;
   caps?: HelloCapabilities;
-};
+}
 
-export type InventorySnapshotMsg = {
+export interface InventorySnapshotMsg {
   p: Protocol;
   t: 'INVENTORY_SNAPSHOT';
   files: FileDesc[];
   inventoryVersion?: number;
-};
+}
 
-export type InventoryDeltaMsg = {
+export interface InventoryDeltaMsg {
   p: Protocol;
   t: 'INVENTORY_DELTA';
   add?: FileDesc[];
   remove?: string[];
   baseVersion?: number;
   nextVersion?: number;
-};
+}
 
-export type InventoryResyncRequestMsg = {
+export interface InventoryResyncRequestMsg {
   p: Protocol;
   t: 'INVENTORY_RESYNC_REQUEST';
   reason?: string;
-};
+}
 
-export type InventorySnapshotBeginMsg = {
+export interface InventorySnapshotBeginMsg {
   p: Protocol;
   t: 'INVENTORY_SNAPSHOT_BEGIN';
   snapshotId: string;
   inventoryVersion: number;
   totalParts: number;
-};
+}
 
-export type InventorySnapshotPartMsg = {
+export interface InventorySnapshotPartMsg {
   p: Protocol;
   t: 'INVENTORY_SNAPSHOT_PART';
   snapshotId: string;
   partIndex: number;
   files: FileDesc[];
-};
+}
 
-export type InventorySnapshotEndMsg = {
+export interface InventorySnapshotEndMsg {
   p: Protocol;
   t: 'INVENTORY_SNAPSHOT_END';
   snapshotId: string;
   inventoryVersion: number;
   totalParts: number;
-};
+}
 
-export type GetFileMsg = {
+export interface GetFileMsg {
   p: Protocol;
   t: 'GET_FILE';
   transferId: string;
   fileId: string;
-};
+}
 
-export type FileMetaMsg = {
+export interface FileMetaMsg {
   p: Protocol;
   t: 'FILE_META';
   transferId: string;
@@ -94,39 +94,39 @@ export type FileMetaMsg = {
     mtime?: number;
     hash?: FileHash;
   };
-};
+}
 
-export type FileChunkMsg = {
+export interface FileChunkMsg {
   p: Protocol;
   t: 'FILE_CHUNK';
   transferId: string;
   seq: number;
   eof?: boolean;
   data: Uint8Array;
-};
+}
 
-export type FileEndMsg = {
+export interface FileEndMsg {
   p: Protocol;
   t: 'FILE_END';
   transferId: string;
   hash?: FileHash;
-};
+}
 
-export type CancelMsg = {
+export interface CancelMsg {
   p: Protocol;
   t: 'CANCEL';
   transferId: string;
   reason?: string;
-};
+}
 
-export type ErrorMsg = {
+export interface ErrorMsg {
   p: Protocol;
   t: 'ERROR';
   scope: 'session' | 'transfer';
   transferId?: string;
   code: string;
   message: string;
-};
+}
 
 export type ControlMsg =
   | HelloMsg
@@ -150,6 +150,8 @@ export type ControlMsgWithoutProtocol = DistributiveOmit<ControlMsg, 'p'>;
  * Strict runtime checks for CONTROL messages.
  * FILE_CHUNK is carried via binary wire data frames.
  */
+
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: todo refactor
 export function isControlMsg(x: unknown): x is ControlMsg {
   if (!isRecord(x)) return false;
   if (!isProtocol(x.p)) return false;

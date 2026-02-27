@@ -2,10 +2,12 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import type { FileHash } from './types';
 
-type Sha256IncrementalHasher = {
+interface Sha256IncrementalHasher {
   update(data: Uint8Array): void;
   digest(): Uint8Array;
-};
+}
+
+const SHA256_HEX_RE = /^[a-fA-F0-9]{64}$/;
 
 export interface TransferHashAccumulator {
   hasher: Sha256IncrementalHasher;
@@ -47,11 +49,13 @@ export function finalizeTransferHashAccumulator(accumulator: TransferHashAccumul
 }
 
 export function isSameFileHash(left: FileHash, right: FileHash): boolean {
-  return left.alg === right.alg && normalizeHashValue(left.value) === normalizeHashValue(right.value);
+  return (
+    left.alg === right.alg && normalizeHashValue(left.value) === normalizeHashValue(right.value)
+  );
 }
 
 export function isValidSha256Hex(value: string): boolean {
-  return /^[a-fA-F0-9]{64}$/.test(value);
+  return SHA256_HEX_RE.test(value);
 }
 
 export function normalizeHashValue(value: string): string {

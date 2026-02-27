@@ -1,10 +1,12 @@
-/** biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: <explanation> */
+/** biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: Keep view and modal interactions in one component. */
 
 import { useNavigate } from '@solidjs/router';
 import { type Component, createSignal, Show } from 'solid-js';
 import { getBll } from '../../app/bll';
 import type { RoomInitial } from '../../bll/use-cases/init-room';
 import type { RoomIntent } from '../../entity/room';
+
+const NON_DIGIT_RE = /\D/;
 
 export const Home: Component = () => {
   const navigate = useNavigate();
@@ -15,15 +17,15 @@ export const Home: Component = () => {
   const [modalKind, setModalKind] = createSignal<RoomIntent>('create');
   const [pendingRoom, setPendingRoom] = createSignal<RoomInitial | null>(null);
 
-  const format = (d: string) => (d.length <= 3 ? d : `${d.slice(0, 3)}-${d.slice(3, 6)}`);
-  const random6 = () => String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
-  const copyCode = async () => {
+  const format = (d: string): string => (d.length <= 3 ? d : `${d.slice(0, 3)}-${d.slice(3, 6)}`);
+  const random6 = (): string => String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
+  const copyCode = async (): Promise<void> => {
     const code = raw();
     if (code.length !== 6) return;
     await navigator.clipboard.writeText(code);
   };
 
-  const openConfirm = (room: RoomInitial) => {
+  const openConfirm = (room: RoomInitial): void => {
     setPendingRoom(room);
     setModalKind(room.intent);
     setModalOpen(true);
@@ -41,7 +43,7 @@ export const Home: Component = () => {
 
           <form
             class="space-y-4"
-            onSubmit={async (e) => {
+            onSubmit={async (e: SubmitEvent): Promise<void> => {
               e.preventDefault();
 
               const code = raw();
@@ -74,15 +76,14 @@ export const Home: Component = () => {
                   pattern="[0-9]{3}-[0-9]{3}"
                   class="w-full rounded-l-lg border border-gray-300 bg-gray-50 px-3 py-2 text-gray-900 text-lg tracking-widest focus:border-gray-500 focus:ring-2 focus:ring-gray-200"
                   value={format(raw())}
-                  onBeforeInput={(e) => {
-                    const ie = e as InputEvent;
-                    if (ie.inputType === 'insertText') {
-                      const data = ie.data ?? '';
+                  onBeforeInput={(e: InputEvent): void => {
+                    if (e.inputType === 'insertText') {
+                      const data = e.data ?? '';
                       // Ограничиваем только ручной ввод; вставка обрабатывается в onInput.
-                      if (/\D/.test(data)) ie.preventDefault();
+                      if (NON_DIGIT_RE.test(data)) e.preventDefault();
                     }
                   }}
-                  onInput={(e) => {
+                  onInput={(e: InputEvent & { currentTarget: HTMLInputElement }): void => {
                     const el = e.currentTarget;
                     const digits = el.value.replace(/\D/g, '').slice(0, 6);
                     setRaw(digits);
@@ -94,7 +95,9 @@ export const Home: Component = () => {
                   type="button"
                   class="inline-flex items-center justify-center gap-2 border border-gray-300 border-l-0 bg-white px-3 py-2 text-gray-700 hover:bg-gray-50 focus:z-10 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   title="Generate random code"
-                  onClick={() => setRaw(random6())}
+                  onClick={(): void => {
+                    setRaw(random6());
+                  }}
                   disabled={busy()}
                 >
                   <svg
@@ -118,7 +121,7 @@ export const Home: Component = () => {
                   type="button"
                   class="inline-flex items-center justify-center border border-gray-300 border-l-0 bg-white px-3 py-2 text-gray-700 hover:bg-gray-50 focus:z-10 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   title="Copy code"
-                  onClick={() => void copyCode()}
+                  onClick={(): void => void copyCode()}
                   disabled={busy() || raw().length !== 6}
                 >
                   <svg
@@ -142,7 +145,9 @@ export const Home: Component = () => {
                   type="button"
                   class="inline-flex items-center justify-center rounded-r-lg border border-gray-300 border-l-0 bg-white px-3 py-2 text-gray-700 hover:bg-gray-50 focus:z-10 focus:outline-none focus:ring-2 focus:ring-gray-200"
                   title="Clear"
-                  onClick={() => setRaw('')}
+                  onClick={(): void => {
+                    setRaw('');
+                  }}
                   disabled={busy()}
                 >
                   <svg viewBox="0 0 20 20" class="h-5 w-5" fill="currentColor" aria-hidden="true">
@@ -183,9 +188,11 @@ export const Home: Component = () => {
       {/* Confirm modal (Flowbite-style markup) */}
       <Show when={modalOpen()}>
         <div class="fixed inset-0 z-50 flex items-center justify-center">
-          <div
+          <button
+            type="button"
             class="absolute inset-0 bg-gray-900/50"
-            onClick={() => {
+            aria-label="Close dialog"
+            onClick={(): void => {
               setModalOpen(false);
               setPendingRoom(null);
             }}
@@ -215,7 +222,7 @@ export const Home: Component = () => {
               <button
                 type="button"
                 class="rounded-lg border border-gray-200 bg-white px-4 py-2 font-medium text-gray-900 text-sm hover:bg-gray-50 focus:outline-none focus:ring-4 focus:ring-gray-100"
-                onClick={() => {
+                onClick={(): void => {
                   setModalOpen(false);
                   setPendingRoom(null);
                 }}
@@ -225,7 +232,7 @@ export const Home: Component = () => {
               <button
                 type="button"
                 class="rounded-lg bg-gray-900 px-4 py-2 font-medium text-sm text-white hover:bg-gray-800 focus:outline-none focus:ring-4 focus:ring-gray-300"
-                onClick={() => {
+                onClick={(): void => {
                   const room = pendingRoom();
                   if (!room) return;
 

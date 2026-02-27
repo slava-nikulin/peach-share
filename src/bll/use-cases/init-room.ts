@@ -44,6 +44,7 @@ export class InitRoomUseCase {
     }
 
     for (const entry of otpEntries.slice(1)) {
+      // biome-ignore lint/performance/noAwaitInLoops: todo refactor
       const id = uint8ArrayToBase64(await this.kdf.deriveRoomId(prs, entry.otp), { urlSafe: true });
       const exists = await this.roomsRepo.roomExists(id);
       if (exists) {

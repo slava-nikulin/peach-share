@@ -1,14 +1,14 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { P2pChannel } from '../../../../bll/ports/p2p-channel';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { P2pChannel } from '../../../../bll/ports/p2p-channel';
 import { createJsonCodec } from './codec';
 import { MessageTransport } from './message-transport';
 import {
-  HASH_MODE_SHA256_END,
-  PROTOCOL_ID,
   type ControlMsg,
+  HASH_MODE_SHA256_END,
   type HelloCapabilities,
+  PROTOCOL_ID,
 } from './protocol';
 import { FileExchangeSessionBuilder } from './session-builder';
 import type { FileDesc, TransferTerminalEvent } from './types';
@@ -49,17 +49,19 @@ function createLinkedChannels(): { a: P2pChannel; b: P2pChannel } {
     bSubs.clear();
   };
 
-  const mkOnClose = (subs: Set<() => void>) => (cb: () => void): (() => void) => {
-    if (closed) {
-      queueMicrotask(cb);
-      return () => {};
-    }
+  const mkOnClose =
+    (subs: Set<() => void>) =>
+    (cb: () => void): (() => void) => {
+      if (closed) {
+        queueMicrotask(cb);
+        return () => {};
+      }
 
-    subs.add(cb);
-    return () => {
-      subs.delete(cb);
+      subs.add(cb);
+      return () => {
+        subs.delete(cb);
+      };
     };
-  };
 
   const a: P2pChannel = {
     readable: bToA.readable,
@@ -100,7 +102,7 @@ function delay(ms: number): Promise<void> {
   });
 }
 
-async function flushMicrotasks(rounds = 3): Promise<void> {
+async function flushMicrotasks(rounds: number = 3): Promise<void> {
   for (let i = 0; i < rounds; i += 1) {
     await Promise.resolve();
   }
@@ -121,7 +123,7 @@ function computeSha256Hex(payload: Uint8Array): string {
 async function sendInventorySnapshot(
   transport: MessageTransport,
   files: FileDesc[],
-  maxBytes = 64 * 1024,
+  maxBytes: number = 64 * 1024,
 ): Promise<void> {
   const codec = createJsonCodec({ maxBytes });
   const encoded = codec.encodeControl({
@@ -137,7 +139,7 @@ async function sendInventorySnapshot(
 async function sendControlMsg(
   transport: MessageTransport,
   msg: ControlMsg,
-  maxBytes = 64 * 1024,
+  maxBytes: number = 64 * 1024,
 ): Promise<void> {
   const codec = createJsonCodec({ maxBytes });
   const encoded = codec.encodeControl(msg);
@@ -146,7 +148,7 @@ async function sendControlMsg(
 
 function collectInboundControlMessages(
   transport: MessageTransport,
-  maxBytes = 64 * 1024,
+  maxBytes: number = 64 * 1024,
 ): {
   captures: Array<{ msg: ControlMsg; payloadBytes: number }>;
   dispose: () => void;
@@ -166,7 +168,7 @@ function collectInboundControlMessages(
   };
 }
 
-type NegotiationStateTest = {
+interface NegotiationStateTest {
   status: 'pending' | 'established' | 'failed';
   settings: {
     protocol: string;
@@ -179,7 +181,7 @@ type NegotiationStateTest = {
   };
   peerSessionId?: string;
   reason?: string;
-};
+}
 
 function readNegotiation(session: unknown): NegotiationStateTest {
   return (session as { negotiation: NegotiationStateTest }).negotiation;
@@ -266,7 +268,8 @@ describe('FileExchangeSessionBuilder', () => {
 
     await waitFor(
       () =>
-        readNegotiation(sender).status === 'established' && readNegotiation(receiver).status === 'established',
+        readNegotiation(sender).status === 'established' &&
+        readNegotiation(receiver).status === 'established',
     );
 
     await sender.addLocal([new File([''], 'zero.txt', { type: 'text/plain' })]);
@@ -278,15 +281,16 @@ describe('FileExchangeSessionBuilder', () => {
 
     const receivedChunks: Uint8Array[] = [];
     const sink = new WritableStream<Uint8Array>({
-      write(chunk): void {
+      write(chunk: Uint8Array): void {
         receivedChunks.push(chunk);
       },
     });
 
     const fileId = senderFiles[0]?.id;
     expect(fileId).toBeDefined();
+    if (!fileId) throw new Error('Expected fileId to be defined');
 
-    const handle = receiver.requestDownloadTo(fileId!, sink);
+    const handle = receiver.requestDownloadTo(fileId, sink);
     await handle.done;
 
     expect(receivedChunks).toHaveLength(0);
@@ -330,7 +334,8 @@ describe('FileExchangeSessionBuilder', () => {
 
     await waitFor(
       () =>
-        readNegotiation(sender).status === 'established' && readNegotiation(receiver).status === 'established',
+        readNegotiation(sender).status === 'established' &&
+        readNegotiation(receiver).status === 'established',
     );
 
     const payload = new Uint8Array(512 * 1024);
@@ -351,8 +356,9 @@ describe('FileExchangeSessionBuilder', () => {
 
     const fileId = senderFiles[0]?.id;
     expect(fileId).toBeDefined();
+    if (!fileId) throw new Error('Expected fileId to be defined');
 
-    const handle = receiver.requestDownloadTo(fileId!, sink);
+    const handle = receiver.requestDownloadTo(fileId, sink);
     handle.cancel();
 
     await expect(handle.done).rejects.toThrow(/cancelled by user/i);
@@ -365,7 +371,9 @@ describe('FileExchangeSessionBuilder', () => {
 
     await waitFor(() => senderTerminals.some((event) => event.transferId === handle.transferId));
 
-    const senderByTransfer = senderTerminals.filter((event) => event.transferId === handle.transferId);
+    const senderByTransfer = senderTerminals.filter(
+      (event) => event.transferId === handle.transferId,
+    );
     expect(senderByTransfer).toHaveLength(1);
     expect(senderByTransfer[0]?.status).toBe('cancelled');
 
@@ -561,7 +569,8 @@ describe('FileExchangeSessionBuilder', () => {
 
     await waitFor(
       () =>
-        readNegotiation(left).status === 'established' && readNegotiation(right).status === 'established',
+        readNegotiation(left).status === 'established' &&
+        readNegotiation(right).status === 'established',
     );
 
     const leftNegotiation = readNegotiation(left);
@@ -736,9 +745,7 @@ describe('FileExchangeSessionBuilder', () => {
       files: [{ id: 'f3', name: 'healed.txt', size: 3, mime: 'text/plain' }],
     });
 
-    await waitFor(
-      () => receiver.peerFiles().length === 1 && receiver.peerFiles()[0]?.id === 'f3',
-    );
+    await waitFor(() => receiver.peerFiles().length === 1 && receiver.peerFiles()[0]?.id === 'f3');
 
     outbound.dispose();
     receiver.dispose();
@@ -837,12 +844,12 @@ describe('FileExchangeSessionBuilder', () => {
       new File(['gamma'], 'gamma.txt', { type: 'text/plain' }),
     ]);
 
-    await waitFor(() =>
-      outbound.captures.some((capture) => capture.msg.t === 'INVENTORY_DELTA'),
-    );
+    await waitFor(() => outbound.captures.some((capture) => capture.msg.t === 'INVENTORY_DELTA'));
 
     const deltas = outbound.captures.filter(
-      (capture): capture is { msg: Extract<ControlMsg, { t: 'INVENTORY_DELTA' }>; payloadBytes: number } =>
+      (
+        capture,
+      ): capture is { msg: Extract<ControlMsg, { t: 'INVENTORY_DELTA' }>; payloadBytes: number } =>
         capture.msg.t === 'INVENTORY_DELTA',
     );
 
@@ -888,13 +895,14 @@ describe('FileExchangeSessionBuilder', () => {
 
     const fileId = sender.localFiles()[0]?.id;
     expect(fileId).toBeDefined();
+    if (!fileId) throw new Error('Expected fileId to be defined');
 
     const { transferId } = newTransferId();
     await sendControlMsg(peerTransport, {
       p: PROTOCOL_ID,
       t: 'GET_FILE',
       transferId,
-      fileId: fileId!,
+      fileId,
     });
 
     await waitFor(() =>

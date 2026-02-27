@@ -20,10 +20,10 @@ import { encodeDataWire, transferIdTo16 } from './wire';
 
 type OutgoingTransferState = 'sending' | 'completed' | 'failed' | 'cancelled';
 
-type PendingOutgoingRequest = {
+interface PendingOutgoingRequest {
   transferId: string;
   fileId: string;
-};
+}
 
 type OutgoingTransfer = {
   transferId: string;
@@ -39,13 +39,13 @@ type OutgoingTransfer = {
   abort: AbortController;
 } & OutgoingTimeoutState;
 
-type OutgoingTransferManagerConfig = {
+interface OutgoingTransferManagerConfig {
   maxConcurrentOutgoingTransfers: number;
   idleTimeoutMs: number;
   hardTimeoutMs: number | null;
-};
+}
 
-type OutgoingTransferManagerDeps = {
+interface OutgoingTransferManagerDeps {
   getState: () => SessionState;
   getCurrentMaxFileBytes: () => number;
   getNegotiatedSettings: () => NegotiatedSessionSettings;
@@ -61,7 +61,7 @@ type OutgoingTransferManagerDeps = {
     cause?: unknown,
   ) => void;
   emitSessionError: (code: SessionErrorCode, message: string, cause?: unknown) => void;
-};
+}
 
 export class OutgoingTransferManager {
   private readonly cfg: OutgoingTransferManagerConfig;
@@ -292,6 +292,7 @@ export class OutgoingTransferManager {
     }
   }
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: todo refactor
   private async sendOutgoingFileChunks(transfer: OutgoingTransfer): Promise<void> {
     const reader = (transfer.file.stream() as ReadableStream<Uint8Array>).getReader();
     const cancelReaderOnAbort = (): void => {
@@ -302,6 +303,7 @@ export class OutgoingTransferManager {
 
     try {
       while (this.isOutgoingActive(transfer)) {
+        // biome-ignore lint/performance/noAwaitInLoops: todo refactor
         const { value, done } = await readWithAbort(reader, transfer.abort.signal);
         if (done) break;
         if (!value || value.length === 0) continue;
@@ -326,6 +328,7 @@ export class OutgoingTransferManager {
             );
           }
 
+          // biome-ignore lint/performance/noAwaitInLoops: todo refactor
           await this.deps.sendDataWire(wire);
           updateTransferHashAccumulator(transfer.hashAccumulator, payload);
 
@@ -512,7 +515,7 @@ async function readWithAbort<T>(
 
   let onAbort: (() => void) | undefined;
   const abortPromise = new Promise<never>((_resolve, reject) => {
-    onAbort = () => {
+    onAbort = (): void => {
       reject(abortReasonToError(signal.reason));
     };
     signal.addEventListener('abort', onAbort, { once: true });

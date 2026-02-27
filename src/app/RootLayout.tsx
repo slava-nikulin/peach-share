@@ -3,9 +3,11 @@ import type { Component, ParentComponent } from 'solid-js';
 import { createMemo, Suspense } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 
-type RouteInfo = { navBar?: Component };
+interface RouteInfo {
+  navBar?: Component;
+}
 
-export const RootLayout: ParentComponent<RouteSectionProps> = (props) => {
+export const RootLayout: ParentComponent<RouteSectionProps> = (props: RouteSectionProps) => {
   const matches = useCurrentMatches();
 
   const NavBar = createMemo<Component | undefined>(() => {

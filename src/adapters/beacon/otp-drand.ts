@@ -10,16 +10,16 @@ const CHAIN_HASH = '8990e7a9aaed2ffed73dbd7092123d6f289930540d7651336225dc172e51
 const PUBLIC_KEY =
   '868f005eb8e6e4ca0a47c8a77ceaa5309a47978a7c71bc5cce96366b5d7a569937c529eeda66c7293784a9402801af31';
 
-const DEFAULT_ENDPOINTS = [
+const DEFAULT_ENDPOINTS: string[] = [
   'https://api.drand.sh',
   'https://drand.cloudflare.com',
   'https://api2.drand.sh',
   'https://api3.drand.sh',
 ];
 
-type DrandOtpClientOpts = {
+interface DrandOtpClientOpts {
   endpoints?: string[];
-};
+}
 
 export class DrandOtpClient implements OtpClientPort {
   private readonly client: FastestNodeClient;
@@ -68,7 +68,7 @@ export class DrandOtpClient implements OtpClientPort {
 
   // Вызови этот метод при остановке приложения (graceful shutdown),
   // чтобы остановить фоновые проверки таймеров FastestNodeClient
-  stop() {
+  stop(): void {
     this.client.stop();
   }
 }

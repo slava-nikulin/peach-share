@@ -1,8 +1,39 @@
-/** biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: <explanation> */
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { ref, remove, set, update } from 'firebase/database';
+import { get, ref, remove, set, update } from 'firebase/database';
 import { describe, expect, it } from 'vitest';
-import { getTestEnv, waitForRoom } from '../../../../tests/setup/integration-firebase';
+import { getTestEnv } from '../../../../tests/setup/integration-firebase';
+
+interface RulesDisabledContext {
+  database(): unknown;
+}
+
+interface RulesDisabledEnv {
+  withSecurityRulesDisabled<T>(cb: (ctx: RulesDisabledContext) => Promise<T>): Promise<T>;
+}
+
+async function waitForRoom(params: {
+  env: RulesDisabledEnv;
+  roomId: string;
+  timeoutMs?: number;
+  intervalMs?: number;
+}): Promise<Record<string, unknown>> {
+  const { env, roomId, timeoutMs = 10_000, intervalMs = 100 } = params;
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    let room: unknown;
+    await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
+      const adminDb = ctx.database();
+      const snap = await get(ref(adminDb, `/rooms/${roomId}`));
+      room = snap.exists() ? snap.val() : undefined;
+    });
+
+    if (typeof room === 'object' && room !== null) return room as Record<string, unknown>;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error(`Room was not created within ${timeoutMs}ms: ${roomId}`);
+}
 
 describe('create room flow: /{uid}/{roomId} -> /rooms/{roomId}', () => {
   it('creates room via function trigger', async () => {
@@ -16,7 +47,7 @@ describe('create room flow: /{uid}/{roomId} -> /rooms/{roomId}', () => {
     await assertSucceeds(set(ref(userDb, `/${uid}/${roomId}`), { created_at: Date.now() }));
 
     // 2) Функция должна создать /rooms/{roomId}
-    const room = await waitForRoom({ uid, roomId });
+    const room = await waitForRoom({ env, roomId });
 
     expect(room).toBeTruthy();
     expect(room.created_by).toBe(uid);
@@ -111,7 +142,7 @@ describe('security rules invariants (requests + rooms)', () => {
     const otherDb = env.authenticatedContext(other).database();
 
     await assertSucceeds(set(ref(creatorDb, `/${creator}/${roomId}`), { created_at: Date.now() }));
-    const room = await waitForRoom({ uid: creator, roomId });
+    const room = await waitForRoom({ env, roomId });
 
     expect(room.created_by).toBe(creator);
 
@@ -136,15 +167,19 @@ describe('security rules invariants (requests + rooms)', () => {
 });
 
 describe('rooms PAKE (y) + KC security rules', () => {
-  const mkUid = (p: string) => `${p}_${Math.random().toString(16).slice(2, 10)}`;
-  const mkRoomId = () => `r_${Math.random().toString(16).slice(2, 10)}`;
+  const mkUid = (p: string): string => `${p}_${Math.random().toString(16).slice(2, 10)}`;
+  const mkRoomId = (): string => `r_${Math.random().toString(16).slice(2, 10)}`;
 
   const MAX_LEN = 128;
 
-  const str = (n: number, ch = 'A') => ch.repeat(n);
+  const str = (n: number, ch: string = 'A'): string => ch.repeat(n);
 
-  const seedRoom = async (env: any, roomId: string, createdBy: string) => {
-    await env.withSecurityRulesDisabled(async (ctx: any) => {
+  const seedRoom = async (
+    env: RulesDisabledEnv,
+    roomId: string,
+    createdBy: string,
+  ): Promise<void> => {
+    await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
       const adminDb = ctx.database();
       await set(ref(adminDb, `/rooms/${roomId}`), {
         created_by: createdBy,
@@ -202,9 +237,9 @@ describe('rooms PAKE (y) + KC security rules', () => {
 
       const db = env.authenticatedContext(uid).database();
 
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), 123 as any));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), { x: str(10) } as any));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), null as any));
+      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), 123 as unknown));
+      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), { x: str(10) } as unknown));
+      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), null as unknown));
 
       await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), '')); // если в rules length > 0
       await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), str(MAX_LEN)));
@@ -255,7 +290,7 @@ describe('rooms PAKE (y) + KC security rules', () => {
       await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), str(43)));
 
       await assertFails(remove(ref(db, `/rooms/${roomId}/pake/v1/a/y`)));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), null as any));
+      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), null as unknown));
     });
 
     it('cannot write any other keys under pake/v1 besides allowed ones', async () => {
@@ -275,7 +310,7 @@ describe('rooms PAKE (y) + KC security rules', () => {
       await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/b/z`), str(10)));
 
       // запрет записи объектом на уровень a/b (пишем только leaf y/kc)
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a`), { y: str(43) } as any));
+      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a`), { y: str(43) } as unknown));
     });
 
     it('deleting the whole room by owner removes pake artifacts (allowed via parent delete)', async () => {
@@ -353,9 +388,9 @@ describe('rooms PAKE (y) + KC security rules', () => {
       // нужно иметь a/y, чтобы kc вообще был разрешён по правилу
       await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), str(43)));
 
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), 123 as any));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), { x: str(10) } as any));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), null as any));
+      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), 123 as unknown));
+      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), { x: str(10) } as unknown));
+      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), null as unknown));
 
       await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), '')); // если length > 0
       await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), str(MAX_LEN + 1)));
@@ -392,21 +427,25 @@ describe('rooms PAKE (y) + KC security rules', () => {
       await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), str(43, 'C')));
 
       await assertFails(remove(ref(db, `/rooms/${roomId}/pake/v1/a/kc`)));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), null as any));
+      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), null as unknown));
     });
   });
 });
 
 describe('rooms WebRTC signaling (offer/answer) security rules', () => {
-  const mkUid = (p: string) => `${p}_${Math.random().toString(16).slice(2, 10)}`;
-  const mkRoomId = () => `r_${Math.random().toString(16).slice(2, 10)}`;
+  const mkUid = (p: string): string => `${p}_${Math.random().toString(16).slice(2, 10)}`;
+  const mkRoomId = (): string => `r_${Math.random().toString(16).slice(2, 10)}`;
 
   const MAX_LEN_WEBRTC = 32768;
 
-  const str = (n: number, ch = 'A') => ch.repeat(n);
+  const str = (n: number, ch: string = 'A'): string => ch.repeat(n);
 
-  const seedRoom = async (env: any, roomId: string, createdBy: string) => {
-    await env.withSecurityRulesDisabled(async (ctx: any) => {
+  const seedRoom = async (
+    env: RulesDisabledEnv,
+    roomId: string,
+    createdBy: string,
+  ): Promise<void> => {
+    await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
       const adminDb = ctx.database();
       await set(ref(adminDb, `/rooms/${roomId}`), {
         created_by: createdBy,
@@ -415,8 +454,8 @@ describe('rooms WebRTC signaling (offer/answer) security rules', () => {
     });
   };
 
-  const seedKcs = async (env: any, roomId: string) => {
-    await env.withSecurityRulesDisabled(async (ctx: any) => {
+  const seedKcs = async (env: RulesDisabledEnv, roomId: string): Promise<void> => {
+    await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
       const adminDb = ctx.database();
       // Для webrtc rules важно только существование a/kc и b/kc
       await set(ref(adminDb, `/rooms/${roomId}/pake/v1/a/kc`), str(43, 'K')); // <= 128
@@ -424,8 +463,8 @@ describe('rooms WebRTC signaling (offer/answer) security rules', () => {
     });
   };
 
-  const seedOffer = async (env: any, roomId: string, offer: string) => {
-    await env.withSecurityRulesDisabled(async (ctx: any) => {
+  const seedOffer = async (env: RulesDisabledEnv, roomId: string, offer: string): Promise<void> => {
+    await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
       const adminDb = ctx.database();
       await set(ref(adminDb, `/rooms/${roomId}/webrtc/v1/offer`), offer);
     });
