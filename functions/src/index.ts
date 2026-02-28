@@ -1,11 +1,23 @@
-import { initializeApp } from 'firebase-admin/app';
-import { type Database, getDatabase } from 'firebase-admin/database';
+import { type App, getApps, initializeApp } from 'firebase-admin/app';
+import { type Database, getDatabase, getDatabaseWithUrl } from 'firebase-admin/database';
 import * as logger from 'firebase-functions/logger';
 import { onValueWritten } from 'firebase-functions/v2/database';
 import { onRequest } from 'firebase-functions/v2/https';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 
-initializeApp();
-const db: Database = getDatabase();
+const emulatorHost: string | undefined = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
+const projectId: string =
+  process.env.GCLOUD_PROJECT ?? process.env.GOOGLE_CLOUD_PROJECT ?? 'demo-peach-share';
+const emulatorDatabaseUrl: string | undefined = emulatorHost
+  ? `http://${emulatorHost}?ns=${projectId}`
+  : undefined;
+
+const app: App =
+  getApps()[0] ??
+  initializeApp(emulatorDatabaseUrl ? { projectId, databaseURL: emulatorDatabaseUrl } : undefined);
+const db: Database = emulatorDatabaseUrl
+  ? getDatabaseWithUrl(emulatorDatabaseUrl, app)
+  : getDatabase(app);
 
 interface Slot {
   roomId: string;
@@ -159,4 +171,144 @@ export const deleteRoomOnFinalized: ReturnType<typeof onValueWritten> = onValueW
   },
 );
 
-// TODO janitor
+export interface JanitorResult {
+  cutoff: number;
+  roomsDeleted: number;
+  slotsDeleted: number;
+  usersDeleted: number;
+}
+
+export async function runJanitorOnce(opts?: {
+  maxAgeMs?: number;
+  pageSize?: number;
+  updateBatch?: number;
+}): Promise<JanitorResult> {
+  const MAX_AGE_MS = opts?.maxAgeMs ?? 60 * 60 * 1000; // 1 час
+  const cutoff = Date.now() - MAX_AGE_MS;
+
+  const PAGE_SIZE = opts?.pageSize ?? 200;
+  const UPDATE_BATCH = opts?.updateBatch ?? 400;
+
+  let roomsDeleted = 0;
+  let slotsDeleted = 0;
+  let usersDeleted = 0;
+
+  const pending: Record<string, null> = {};
+
+  const flush = async (): Promise<void> => {
+    const keys = Object.keys(pending);
+    if (keys.length === 0) return;
+    await db.ref('/').update(pending);
+    for (const k of keys) delete pending[k];
+  };
+
+  const queueDelete = (path: string, kind: 'room' | 'slot' | 'user'): void => {
+    pending[path] = null;
+    if (kind === 'room') roomsDeleted += 1;
+    if (kind === 'slot') slotsDeleted += 1;
+    if (kind === 'user') usersDeleted += 1;
+  };
+
+  // 1) rooms: delete by private/created_at <= cutoff
+  {
+    const snap = await db
+      .ref('/rooms')
+      .orderByChild('private/created_at')
+      .endAt(cutoff)
+      .once('value');
+
+    snap.forEach((roomSnap) => {
+      const roomId = roomSnap.key;
+      if (!roomId) return;
+
+      const v = roomSnap.val();
+      const createdAt =
+        isRecord(v) && isRecord(v.private) && typeof v.private.created_at === 'number'
+          ? v.private.created_at
+          : undefined;
+
+      if (typeof createdAt === 'number' && createdAt <= cutoff) {
+        queueDelete(`/rooms/${roomId}`, 'room');
+      }
+    });
+
+    await flush();
+  }
+
+  // 2) userspace: delete old slots; delete /{uid} if nothing else left
+  {
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: todo refactor
+    const processUsersPage = async (startAtKey: string | null): Promise<void> => {
+      let query = db.ref('/').orderByKey();
+      query = startAtKey
+        ? query.startAt(startAtKey).limitToFirst(PAGE_SIZE + 1)
+        : query.limitToFirst(PAGE_SIZE + 1);
+
+      const pageSnap = await query.once('value');
+
+      const children: Array<{ key: string; val: unknown }> = [];
+      pageSnap.forEach((ch) => {
+        if (ch.key) children.push({ key: ch.key, val: ch.val() });
+      });
+
+      if (children.length === 0) return;
+
+      if (startAtKey && children[0]?.key === startAtKey) children.shift();
+      if (children.length === 0) return;
+
+      for (const { key, val } of children) {
+        if (key === 'rooms') continue;
+        if (!isRecord(val)) continue;
+
+        const actions: Array<'create' | 'join'> = ['create', 'join'];
+        const toDeleteActions: Array<'create' | 'join'> = [];
+
+        for (const action of actions) {
+          const slot = val[action];
+          if (!isRecord(slot)) continue;
+
+          const createdAt = slot.created_at;
+          if (typeof createdAt === 'number' && createdAt <= cutoff) {
+            toDeleteActions.push(action);
+          }
+        }
+
+        if (toDeleteActions.length === 0) continue;
+
+        const toDeleteSet = new Set<string>(toDeleteActions);
+        const remainingKeys = Object.keys(val).filter((k) => !toDeleteSet.has(k));
+
+        if (remainingKeys.length === 0) {
+          queueDelete(`/${key}`, 'user');
+        } else {
+          for (const action of toDeleteActions) {
+            queueDelete(`/${key}/${action}`, 'slot');
+          }
+        }
+      }
+
+      if (Object.keys(pending).length >= UPDATE_BATCH) {
+        await flush();
+      }
+
+      const nextLastKey = children.at(-1)?.key ?? null;
+      if (!nextLastKey || children.length < PAGE_SIZE) return;
+      await processUsersPage(nextLastKey);
+    };
+
+    await processUsersPage(null);
+
+    await flush();
+  }
+
+  return { cutoff, roomsDeleted, slotsDeleted, usersDeleted };
+}
+
+// cron wrapper (оставь как было, только вызывай runJanitorOnce)
+export const janitor: ReturnType<typeof onSchedule> = onSchedule(
+  { schedule: 'every day 03:00', timeZone: 'Asia/Almaty' },
+  async () => {
+    const res = await runJanitorOnce();
+    logger.info('janitor completed', res);
+  },
+);

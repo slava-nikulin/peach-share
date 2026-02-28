@@ -1,4 +1,3 @@
-// src/adapters/pake/cpace-engine.ts
 import {
   type CPaceMessage,
   type CPaceMode,

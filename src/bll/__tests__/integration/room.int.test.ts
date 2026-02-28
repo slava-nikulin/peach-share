@@ -1,8 +1,8 @@
-/** biome-ignore-all lint/complexity/noExcessiveLinesPerFunction: integration-e2e */
-
 // biome-ignore lint/nursery/noUnresolvedImports: Node built-in in integration test runtime.
 import { randomBytes } from 'node:crypto';
+import type { RulesTestContext, RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { type Database, type DataSnapshot, get, onValue, ref } from 'firebase/database';
+import type { Options as PeerOptions } from 'simple-peer';
 import { uint8ArrayToBase64 } from 'uint8array-extras';
 import { describe, expect, it } from 'vitest';
 import { RtdbOnlineRunner } from '../../../adapters/firebase/rtdb-online-runner';
@@ -15,13 +15,8 @@ import type { P2pChannel } from '../../ports/p2p-channel';
 import { CreateRoomUseCase } from '../../use-cases/create-room';
 import { JoinRoomUseCase } from '../../use-cases/join-room';
 
-interface RulesDisabledContext {
-  database(): unknown;
-}
-
-interface RulesDisabledEnv {
-  withSecurityRulesDisabled<T>(cb: (ctx: RulesDisabledContext) => Promise<T>): Promise<T>;
-}
+type RulesDisabledContext = RulesTestContext;
+type RulesDisabledEnv = Pick<RulesTestEnvironment, 'withSecurityRulesDisabled'>;
 
 function toU8(x: unknown): Uint8Array {
   if (x instanceof Uint8Array) return new Uint8Array(x);
@@ -29,21 +24,19 @@ function toU8(x: unknown): Uint8Array {
   throw new Error(`Expected Uint8Array/Buffer, got ${Object.prototype.toString.call(x)}`);
 }
 
-function onceReceive(ch: P2pChannel): Promise<Uint8Array> {
+async function onceReceive(ch: P2pChannel): Promise<Uint8Array> {
   const reader = ch.readable.getReader();
-  return reader
-    .read()
-    .then(({ value, done }) => {
-      if (done || !value) {
-        throw new Error('Channel closed before message was received');
-      }
-      return new Uint8Array(value);
-    })
-    .finally(() => {
-      try {
-        reader.releaseLock();
-      } catch {}
-    });
+  try {
+    const { value, done } = await reader.read();
+    if (done || !value) {
+      throw new Error('Channel closed before message was received');
+    }
+    return new Uint8Array(value);
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {}
+  }
 }
 
 async function sendOnce(ch: P2pChannel, payload: Uint8Array): Promise<void> {
@@ -207,7 +200,9 @@ describe('rooms handshake integration (happy path)', () => {
     const responderRunner = new RtdbOnlineRunner(responderDb);
 
     const wrtcMod = await import('@avahq/wrtc');
-    const wrtc = (wrtcMod as { default?: unknown }).default ?? wrtcMod;
+    const wrtc = ((wrtcMod as { default?: unknown }).default ?? wrtcMod) as NonNullable<
+      PeerOptions['wrtc']
+    >;
 
     // ВАЖНО: если не починил SimplePeerEngine (см. замечание выше), этот rtcConfig сейчас НЕ применяется.
     const rtcConfig: RTCConfiguration = { iceServers: [] };

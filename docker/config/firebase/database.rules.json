@@ -23,6 +23,7 @@
     "rooms": {
       ".read": false,
       ".write": false,
+      ".indexOn": ["private/created_at"],
       "$roomId": {
         ".read": false,
         ".write": false,

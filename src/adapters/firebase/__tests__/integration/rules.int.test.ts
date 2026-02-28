@@ -1,759 +1,472 @@
+import type { RulesTestContext, RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { get, ref, remove, set, update } from 'firebase/database';
-import { describe, expect, it } from 'vitest';
+import { type Database, get, ref, remove, set, setWithPriority } from 'firebase/database';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { getTestEnv } from '../../../../tests/setup/integration-firebase';
 
-interface RulesDisabledContext {
-  database(): unknown;
+type RulesDisabledContext = RulesTestContext;
+type RulesDisabledEnv = RulesTestEnvironment;
+
+const mkUid = (p: string): string => `${p}_${Math.random().toString(16).slice(2, 10)}`;
+const mkRoomId = (): string => `room_${Math.random().toString(16).slice(2, 18)}`;
+
+/**
+ * Важно: rules опираются на now. Чтобы тесты не флапали, используем безопасные зазоры:
+ * - "моложе 10 сек" => created_at = now - 9000 (должно FAIL)
+ * - "старше 10 сек" => created_at = now - 11000 (должно SUCCEED)
+ * - "слишком старый для validate" => now - 3000 (FAIL, т.к. окно ±2000)
+ * - "слишком будущий" => now + 3000 (FAIL)
+ */
+const nowMs = (): number => Date.now();
+
+async function adminSet(env: RulesDisabledEnv, path: string, value: unknown): Promise<void> {
+  await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
+    const adminDb = ctx.database() as unknown as Database;
+    await set(ref(adminDb, path), value);
+  });
 }
 
-interface RulesDisabledEnv {
-  withSecurityRulesDisabled<T>(cb: (ctx: RulesDisabledContext) => Promise<T>): Promise<T>;
+async function adminGet(env: RulesDisabledEnv, path: string): Promise<unknown> {
+  let out: unknown;
+  await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
+    const adminDb = ctx.database() as unknown as Database;
+    const snap = await get(ref(adminDb, path));
+    out = snap.exists() ? snap.val() : undefined;
+  });
+  return out;
 }
 
-async function waitForRoom(params: {
-  env: RulesDisabledEnv;
-  roomId: string;
-  timeoutMs?: number;
-  intervalMs?: number;
-}): Promise<Record<string, unknown>> {
-  const { env, roomId, timeoutMs = 10_000, intervalMs = 100 } = params;
-  const start = Date.now();
-
-  while (Date.now() - start < timeoutMs) {
-    let room: unknown;
-    await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
-      const adminDb = ctx.database();
-      const snap = await get(ref(adminDb, `/rooms/${roomId}`));
-      room = snap.exists() ? snap.val() : undefined;
-    });
-
-    if (typeof room === 'object' && room !== null) return room as Record<string, unknown>;
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
-
-  throw new Error(`Room was not created within ${timeoutMs}ms: ${roomId}`);
+/**
+ * Минимальный валидный room doc для messages/state тестов.
+ * Приватку клиенты не пишут; мы её сидим админом.
+ */
+async function seedRoomBase(
+  env: RulesDisabledEnv,
+  roomId: string,
+  creatorUid: string,
+): Promise<void> {
+  await adminSet(env, `/rooms/${roomId}`, {
+    private: {
+      creator_uid: creatorUid,
+      responder_uid: null,
+      created_at: nowMs(),
+    },
+    meta: { state: 1 },
+  });
 }
 
-describe('create room flow: /{uid}/{roomId} -> /rooms/{roomId}', () => {
-  it('creates room via function trigger', async () => {
-    const env = getTestEnv();
+async function seedResponderJoined(
+  env: RulesDisabledEnv,
+  roomId: string,
+  responderUid: string,
+): Promise<void> {
+  const cur = (await adminGet(env, `/rooms/${roomId}`)) as Record<string, unknown> | undefined;
+  const curPrivate =
+    cur && typeof cur.private === 'object' && cur.private !== null
+      ? (cur.private as Record<string, unknown>)
+      : undefined;
+  const curMeta =
+    cur && typeof cur.meta === 'object' && cur.meta !== null
+      ? (cur.meta as Record<string, unknown>)
+      : undefined;
+  const next = {
+    ...(cur ?? {}),
+    private: {
+      ...(curPrivate ?? {}),
+      responder_uid: responderUid,
+    },
+    meta: {
+      ...(curMeta ?? {}),
+      state: 2,
+    },
+  };
+  await adminSet(env, `/rooms/${roomId}`, next);
+}
 
-    const uid = `u_${Math.random().toString(16).slice(2, 10)}`;
-    const roomId = `r_${Math.random().toString(16).slice(2, 10)}`;
-    const userDb = env.authenticatedContext(uid).database();
+async function seedAllMessagesPresent(env: RulesDisabledEnv, roomId: string): Promise<void> {
+  // Все 6 обязательных сообщений должны существовать, иначе state=3 запрещён rules.
+  await adminSet(env, `/rooms/${roomId}/messages`, {
+    creator: {
+      pake: { msg: 'a', mac_tag: 'b' },
+      rtc: { msg: 'c' },
+    },
+    responder: {
+      pake: { msg: 'd', mac_tag: 'e' },
+      rtc: { msg: 'f' },
+    },
+  });
+}
 
-    // 1) Пользователь создаёт request-узел в своём namespace
-    await assertSucceeds(set(ref(userDb, `/${uid}/${roomId}`), { created_at: Date.now() }));
+describe('RTDB security rules: user slots /{uid}/{create|join}', () => {
+  let env: RulesDisabledEnv;
 
-    // 2) Функция должна создать /rooms/{roomId}
-    const room = await waitForRoom({ env, roomId });
+  beforeEach(async () => {
+    env = getTestEnv();
+    await env.clearDatabase();
+  });
 
-    expect(room).toBeTruthy();
-    expect(room.created_by).toBe(uid);
-    expect(typeof room.created_at).toBe('number');
+  it('unauth: cannot write to /{uid}/create', async () => {
+    const uid = mkUid('u');
+    const db = env.unauthenticatedContext().database() as unknown as Database;
 
-    // Пользователь не может создать /rooms напрямую
     await assertFails(
-      set(ref(userDb, `/rooms/${roomId}_illegal`), { created_by: uid, created_at: Date.now() }),
+      set(ref(db, `/${uid}/create`), {
+        room_id: 'x',
+        created_at: nowMs(),
+      }),
     );
   });
-});
 
-describe('security rules invariants (requests + rooms)', () => {
-  it('cannot create request under another uid; can create only under own uid', async () => {
-    const env = getTestEnv();
-    const uidA = `uA_${Math.random().toString(16).slice(2, 10)}`;
-    const uidB = `uB_${Math.random().toString(16).slice(2, 10)}`;
-    const roomId = `r_${Math.random().toString(16).slice(2, 10)}`;
+  it('auth: can create own slot (create) with valid payload', async () => {
+    const uid = mkUid('u');
+    const db = env.authenticatedContext(uid).database() as unknown as Database;
 
-    const dbA = env.authenticatedContext(uidA).database();
-
-    await assertFails(set(ref(dbA, `/${uidB}/${roomId}`), { created_at: Date.now() }));
-    await assertSucceeds(set(ref(dbA, `/${uidA}/${roomId}`), { created_at: Date.now() }));
+    await assertSucceeds(
+      set(ref(db, `/${uid}/create`), {
+        room_id: 'room-1',
+        created_at: nowMs(),
+      }),
+    );
   });
 
-  it('only created_at is allowed under /{uid}/{roomId} (no extra fields, no nested writes)', async () => {
-    const env = getTestEnv();
-    const uid = `u_${Math.random().toString(16).slice(2, 10)}`;
-    const roomId = `r_${Math.random().toString(16).slice(2, 10)}`;
-    const db = env.authenticatedContext(uid).database();
+  it('auth: cannot write to /{otherUid}/create', async () => {
+    const uid = mkUid('u');
+    const other = mkUid('other');
+    const db = env.authenticatedContext(uid).database() as unknown as Database;
 
-    await assertSucceeds(set(ref(db, `/${uid}/${roomId}`), { created_at: Date.now() }));
-
-    // extra field must be rejected due to $other: false
-    await assertFails(set(ref(db, `/${uid}/${roomId}`), { created_at: Date.now(), extra: 1 }));
-
-    // direct nested write must be rejected (no .write at child path)
-    await assertFails(set(ref(db, `/${uid}/${roomId}/nested`), true));
+    await assertFails(
+      set(ref(db, `/${other}/create`), {
+        room_id: 'room-1',
+        created_at: nowMs(),
+      }),
+    );
   });
 
-  it('created_at must be approx now (reject future and too-old timestamps)', async () => {
-    const env = getTestEnv();
-    const uid = `u_${Math.random().toString(16).slice(2, 10)}`;
-    const roomId1 = `r1_${Math.random().toString(16).slice(2, 10)}`;
-    const roomId2 = `r2_${Math.random().toString(16).slice(2, 10)}`;
-    const db = env.authenticatedContext(uid).database();
+  it('auth: cannot write to /{uid}/<action> when action is not create/join', async () => {
+    const uid = mkUid('u');
+    const db = env.authenticatedContext(uid).database() as unknown as Database;
 
-    // future timestamp
-    await assertFails(set(ref(db, `/${uid}/${roomId1}`), { created_at: Date.now() + 60_000 }));
-
-    // too old for "now window" (older than 10s)
-    await assertFails(set(ref(db, `/${uid}/${roomId2}`), { created_at: Date.now() - 60_000 }));
+    await assertFails(
+      set(ref(db, `/${uid}/hack`), {
+        room_id: 'room-1',
+        created_at: nowMs(),
+      }),
+    );
   });
 
-  it('cannot overwrite a fresh request (<2 minutes old)', async () => {
-    const env = getTestEnv();
-    const uid = `u_${Math.random().toString(16).slice(2, 10)}`;
-    const roomId = `r_${Math.random().toString(16).slice(2, 10)}`;
-    const db = env.authenticatedContext(uid).database();
+  it('validate: missing room_id/created_at or extra fields are rejected', async () => {
+    const uid = mkUid('u');
+    const db = env.authenticatedContext(uid).database() as unknown as Database;
 
-    await assertSucceeds(set(ref(db, `/${uid}/${roomId}`), { created_at: Date.now() }));
+    await assertFails(set(ref(db, `/${uid}/create`), { room_id: 'x' }));
+    await assertFails(set(ref(db, `/${uid}/create`), { created_at: nowMs() }));
 
-    // immediate overwrite should fail (old created_at is not <= now-120000)
-    await assertFails(set(ref(db, `/${uid}/${roomId}`), { created_at: Date.now() }));
+    await assertFails(
+      set(ref(db, `/${uid}/create`), {
+        room_id: 'x',
+        created_at: nowMs(),
+        extra: 123,
+      }),
+    );
   });
 
-  it('can overwrite a stale request (>=2 minutes old)', async () => {
-    const env = getTestEnv();
-    const uid = `u_${Math.random().toString(16).slice(2, 10)}`;
-    const roomId = `r_${Math.random().toString(16).slice(2, 10)}`;
-    const db = env.authenticatedContext(uid).database();
+  it('validate: room_id must be 1..128 string', async () => {
+    const uid = mkUid('u');
+    const db = env.authenticatedContext(uid).database() as unknown as Database;
 
-    // Seed a stale request.
-    // We cannot create it via user write because created_at must be near now.
-    // So we seed via RulesTestEnvironment bypass, then test overwrite as user.
-    // IMPORTANT: use testEnv.withSecurityRulesDisabled for seeding.
-    await env.withSecurityRulesDisabled(async (ctx) => {
-      await set(ref(ctx.database(), `/${uid}/${roomId}`), { created_at: Date.now() - 180_000 });
-    });
-
-    // Now overwrite as user should succeed (old is stale, new created_at is near now)
-    await assertSucceeds(set(ref(db, `/${uid}/${roomId}`), { created_at: Date.now() }));
+    await assertFails(set(ref(db, `/${uid}/create`), { room_id: '', created_at: nowMs() }));
+    await assertFails(
+      set(ref(db, `/${uid}/create`), { room_id: 'x'.repeat(129), created_at: nowMs() }),
+    );
+    await assertFails(set(ref(db, `/${uid}/create`), { room_id: 123, created_at: nowMs() }));
   });
 
-  it('can delete /rooms/{roomId} only if created_by == auth.uid; others cannot', async () => {
-    const env = getTestEnv();
-    const creator = `uC_${Math.random().toString(16).slice(2, 10)}`;
-    const other = `uO_${Math.random().toString(16).slice(2, 10)}`;
-    const roomId = `r_${Math.random().toString(16).slice(2, 10)}`;
+  it('validate: created_at must be within now ±2000ms', async () => {
+    const uid = mkUid('u');
+    const db = env.authenticatedContext(uid).database() as unknown as Database;
 
-    const creatorDb = env.authenticatedContext(creator).database();
-    const otherDb = env.authenticatedContext(other).database();
+    await assertFails(set(ref(db, `/${uid}/create`), { room_id: 'x', created_at: nowMs() - 3000 }));
+    await assertFails(set(ref(db, `/${uid}/create`), { room_id: 'x', created_at: nowMs() + 3000 }));
 
-    await assertSucceeds(set(ref(creatorDb, `/${creator}/${roomId}`), { created_at: Date.now() }));
-    const room = await waitForRoom({ env, roomId });
-
-    expect(room.created_by).toBe(creator);
-
-    await assertFails(remove(ref(otherDb, `/rooms/${roomId}`)));
-    await assertSucceeds(remove(ref(creatorDb, `/rooms/${roomId}`)));
+    await assertSucceeds(set(ref(db, `/${uid}/create`), { room_id: 'x', created_at: nowMs() }));
   });
 
-  it('can delete /{uid}/{roomId} only if uid == auth.uid; others cannot', async () => {
-    const env = getTestEnv();
-    const uidA = `uA_${Math.random().toString(16).slice(2, 10)}`;
-    const uidB = `uB_${Math.random().toString(16).slice(2, 10)}`;
-    const roomId = `r_${Math.random().toString(16).slice(2, 10)}`;
+  it('cooldown: cannot overwrite slot within 10s; can overwrite after 10s', async () => {
+    const uid = mkUid('u');
+    const db = env.authenticatedContext(uid).database() as unknown as Database;
 
-    const dbA = env.authenticatedContext(uidA).database();
-    const dbB = env.authenticatedContext(uidB).database();
+    // initial create
+    await assertSucceeds(set(ref(db, `/${uid}/create`), { room_id: 'a', created_at: nowMs() }));
 
-    await assertSucceeds(set(ref(dbA, `/${uidA}/${roomId}`), { created_at: Date.now() }));
+    // overwrite too soon (data.created_at is "fresh" => should FAIL)
+    await assertFails(set(ref(db, `/${uid}/create`), { room_id: 'b', created_at: nowMs() }));
 
-    await assertFails(remove(ref(dbB, `/${uidA}/${roomId}`)));
-    await assertSucceeds(remove(ref(dbA, `/${uidA}/${roomId}`)));
-  });
-});
+    // seed "old enough" entry as admin, then overwrite should SUCCEED
+    await adminSet(env, `/${uid}/create`, { room_id: 'old', created_at: nowMs() - 11_000 });
 
-describe('rooms PAKE (y) + KC security rules', () => {
-  const mkUid = (p: string): string => `${p}_${Math.random().toString(16).slice(2, 10)}`;
-  const mkRoomId = (): string => `r_${Math.random().toString(16).slice(2, 10)}`;
-
-  const MAX_LEN = 128;
-
-  const str = (n: number, ch: string = 'A'): string => ch.repeat(n);
-
-  const seedRoom = async (
-    env: RulesDisabledEnv,
-    roomId: string,
-    createdBy: string,
-  ): Promise<void> => {
-    await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
-      const adminDb = ctx.database();
-      await set(ref(adminDb, `/rooms/${roomId}`), {
-        created_by: createdBy,
-        created_at: Date.now(),
-      });
-    });
-  };
-
-  describe('PAKE messages (y)', () => {
-    it('unauthenticated users cannot write y artifacts', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-
-      await seedRoom(env, roomId, ownerUid);
-
-      const dbUnauth = env.unauthenticatedContext().database();
-      await assertFails(set(ref(dbUnauth, `/rooms/${roomId}/pake/v1/a/y`), str(43)));
-      await assertFails(set(ref(dbUnauth, `/rooms/${roomId}/pake/v1/b/y`), str(43, 'B')));
-    });
-
-    it('any authenticated user can write y artifacts (not only created_by)', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const uidA = mkUid('A');
-      const uidB = mkUid('B');
-
-      await seedRoom(env, roomId, ownerUid);
-
-      const dbA = env.authenticatedContext(uidA).database();
-      const dbB = env.authenticatedContext(uidB).database();
-
-      await assertSucceeds(set(ref(dbA, `/rooms/${roomId}/pake/v1/a/y`), str(44))); // допускаем padding/вариативность
-      await assertSucceeds(set(ref(dbB, `/rooms/${roomId}/pake/v1/b/y`), str(42, 'B')));
-    });
-
-    it('cannot write y artifacts if room does not exist (no "create from below")', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const uid = mkUid('u');
-      const db = env.authenticatedContext(uid).database();
-
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), str(43)));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/b/y`), str(43, 'B')));
-    });
-
-    it('y must be a string and must not exceed max length', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const uid = mkUid('u');
-
-      await seedRoom(env, roomId, ownerUid);
-
-      const db = env.authenticatedContext(uid).database();
-
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), 123 as unknown));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), { x: str(10) } as unknown));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), null as unknown));
-
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), '')); // если в rules length > 0
-      await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), str(MAX_LEN)));
-    });
-
-    it('enforces max length for y (too long fails)', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const uid = mkUid('u');
-
-      await seedRoom(env, roomId, ownerUid);
-
-      const db = env.authenticatedContext(uid).database();
-
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), str(MAX_LEN + 1)));
-    });
-
-    it('write-once: cannot overwrite or update y after first write', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const uid = mkUid('u');
-
-      await seedRoom(env, roomId, ownerUid);
-
-      const db = env.authenticatedContext(uid).database();
-
-      await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), str(43)));
-
-      // overwrite should fail
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), str(44)));
-
-      // update via parent should fail
-      await assertFails(update(ref(db, `/rooms/${roomId}/pake/v1/a`), { y: str(43, 'C') }));
-    });
-
-    it('write-once: cannot delete y artifact (remove or set null)', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const uid = mkUid('u');
-
-      await seedRoom(env, roomId, ownerUid);
-
-      const db = env.authenticatedContext(uid).database();
-
-      await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), str(43)));
-
-      await assertFails(remove(ref(db, `/rooms/${roomId}/pake/v1/a/y`)));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), null as unknown));
-    });
-
-    it('cannot write any other keys under pake/v1 besides allowed ones', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const uid = mkUid('u');
-
-      await seedRoom(env, roomId, ownerUid);
-
-      const db = env.authenticatedContext(uid).database();
-
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/c`), str(10)));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v2/a/y`), str(10)));
-
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/z`), str(10)));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/b/z`), str(10)));
-
-      // запрет записи объектом на уровень a/b (пишем только leaf y/kc)
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a`), { y: str(43) } as unknown));
-    });
-
-    it('deleting the whole room by owner removes pake artifacts (allowed via parent delete)', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const uidOther = mkUid('other');
-
-      await seedRoom(env, roomId, ownerUid);
-
-      const dbOther = env.authenticatedContext(uidOther).database();
-      await assertSucceeds(set(ref(dbOther, `/rooms/${roomId}/pake/v1/a/y`), str(43)));
-      await assertSucceeds(set(ref(dbOther, `/rooms/${roomId}/pake/v1/b/y`), str(43, 'B')));
-
-      const dbOwner = env.authenticatedContext(ownerUid).database();
-      await assertSucceeds(remove(ref(dbOwner, `/rooms/${roomId}`)));
-    });
+    await assertSucceeds(set(ref(db, `/${uid}/create`), { room_id: 'new', created_at: nowMs() }));
   });
 
-  describe('Key confirmation (kc)', () => {
-    it('unauthenticated users cannot write kc artifacts', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
+  it('cooldown: cannot delete slot within 10s; can delete after 10s', async () => {
+    const uid = mkUid('u');
+    const db = env.authenticatedContext(uid).database() as unknown as Database;
 
-      await seedRoom(env, roomId, ownerUid);
+    await assertSucceeds(set(ref(db, `/${uid}/join`), { room_id: 'a', created_at: nowMs() }));
 
-      const dbUnauth = env.unauthenticatedContext().database();
-      await assertFails(set(ref(dbUnauth, `/rooms/${roomId}/pake/v1/a/kc`), str(43)));
-      await assertFails(set(ref(dbUnauth, `/rooms/${roomId}/pake/v1/b/kc`), str(43, 'B')));
-    });
+    await assertFails(remove(ref(db, `/${uid}/join`)));
 
-    it('kc cannot be written if room does not exist', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const uid = mkUid('u');
-      const db = env.authenticatedContext(uid).database();
+    await adminSet(env, `/${uid}/join`, { room_id: 'old', created_at: nowMs() - 11_000 });
+    await assertSucceeds(remove(ref(db, `/${uid}/join`)));
+  });
 
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), str(43)));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/b/kc`), str(43, 'B')));
-    });
+  it('validate: on overwrite created_at must be strictly increasing', async () => {
+    const uid = mkUid('u');
+    const db = env.authenticatedContext(uid).database() as unknown as Database;
 
-    it('kc cannot be written before corresponding y is written (a/kc requires a/y, b/kc requires b/y)', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const uid = mkUid('u');
+    // seed old enough slot
+    const t0 = nowMs() - 11_000;
+    await adminSet(env, `/${uid}/create`, { room_id: 'old', created_at: t0 });
 
-      await seedRoom(env, roomId, ownerUid);
-      const db = env.authenticatedContext(uid).database();
+    // created_at not increasing => FAIL (even though cooldown ok)
+    await assertFails(set(ref(db, `/${uid}/create`), { room_id: 'x', created_at: t0 }));
 
-      // без y -> нельзя
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), str(43)));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/b/kc`), str(43, 'B')));
+    // increasing => SUCCEED
+    await assertSucceeds(set(ref(db, `/${uid}/create`), { room_id: 'x', created_at: nowMs() }));
+  });
 
-      // записали только a/y -> a/kc можно, b/kc нельзя
-      await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), str(44)));
-      await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), str(10, 'C')));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/b/kc`), str(10, 'D')));
+  it('validate: priority must be null (setWithPriority should fail)', async () => {
+    const uid = mkUid('u');
+    const db = env.authenticatedContext(uid).database() as unknown as Database;
 
-      // записали b/y -> b/kc теперь можно
-      await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/b/y`), str(43, 'B')));
-      await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/b/kc`), str(10, 'E')));
-    });
+    await assertFails(
+      setWithPriority(
+        ref(db, `/${uid}/create`),
+        { room_id: 'x', created_at: nowMs() },
+        123, // priority
+      ),
+    );
+  });
 
-    it('kc must be a string and must not exceed max length', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const uid = mkUid('u');
+  it('read model: can read /{uid}, and parent read also allows /{uid}/create', async () => {
+    const uid = mkUid('u');
+    const db = env.authenticatedContext(uid).database() as unknown as Database;
 
-      await seedRoom(env, roomId, ownerUid);
-      const db = env.authenticatedContext(uid).database();
+    await assertSucceeds(set(ref(db, `/${uid}/create`), { room_id: 'x', created_at: nowMs() }));
 
-      // нужно иметь a/y, чтобы kc вообще был разрешён по правилу
-      await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), str(43)));
+    // parent node read allowed by rules
+    await assertSucceeds(get(ref(db, `/${uid}`)));
 
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), 123 as unknown));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), { x: str(10) } as unknown));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), null as unknown));
-
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), '')); // если length > 0
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), str(MAX_LEN + 1)));
-
-      await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), str(MAX_LEN)));
-    });
-
-    it('write-once: cannot overwrite or update kc after first write', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const uid = mkUid('u');
-
-      await seedRoom(env, roomId, ownerUid);
-      const db = env.authenticatedContext(uid).database();
-
-      await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), str(43)));
-      await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), str(43, 'C')));
-
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), str(43, 'D')));
-      await assertFails(update(ref(db, `/rooms/${roomId}/pake/v1/a`), { kc: str(10, 'E') }));
-    });
-
-    it('write-once: cannot delete kc artifact (remove or set null)', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const uid = mkUid('u');
-
-      await seedRoom(env, roomId, ownerUid);
-      const db = env.authenticatedContext(uid).database();
-
-      await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/a/y`), str(43)));
-      await assertSucceeds(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), str(43, 'C')));
-
-      await assertFails(remove(ref(db, `/rooms/${roomId}/pake/v1/a/kc`)));
-      await assertFails(set(ref(db, `/rooms/${roomId}/pake/v1/a/kc`), null as unknown));
-    });
+    // In RTDB, parent ".read" grants descendant reads; child ".read=false" cannot revoke it.
+    await assertSucceeds(get(ref(db, `/${uid}/create`)));
   });
 });
 
-describe('rooms WebRTC signaling (offer/answer) security rules', () => {
-  const mkUid = (p: string): string => `${p}_${Math.random().toString(16).slice(2, 10)}`;
-  const mkRoomId = (): string => `r_${Math.random().toString(16).slice(2, 10)}`;
+describe('RTDB security rules: /rooms/{roomId} messages and finalize', () => {
+  let env: RulesDisabledEnv;
 
-  const MAX_LEN_WEBRTC = 32768;
-
-  const str = (n: number, ch: string = 'A'): string => ch.repeat(n);
-
-  const seedRoom = async (
-    env: RulesDisabledEnv,
-    roomId: string,
-    createdBy: string,
-  ): Promise<void> => {
-    await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
-      const adminDb = ctx.database();
-      await set(ref(adminDb, `/rooms/${roomId}`), {
-        created_by: createdBy,
-        created_at: Date.now(),
-      });
-    });
-  };
-
-  const seedKcs = async (env: RulesDisabledEnv, roomId: string): Promise<void> => {
-    await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
-      const adminDb = ctx.database();
-      // Для webrtc rules важно только существование a/kc и b/kc
-      await set(ref(adminDb, `/rooms/${roomId}/pake/v1/a/kc`), str(43, 'K')); // <= 128
-      await set(ref(adminDb, `/rooms/${roomId}/pake/v1/b/kc`), str(43, 'L')); // <= 128
-    });
-  };
-
-  const seedOffer = async (env: RulesDisabledEnv, roomId: string, offer: string): Promise<void> => {
-    await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
-      const adminDb = ctx.database();
-      await set(ref(adminDb, `/rooms/${roomId}/webrtc/v1/offer`), offer);
-    });
-  };
-
-  describe('offer', () => {
-    it('unauthenticated users cannot write offer', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-
-      const dbUnauth = env.unauthenticatedContext().database();
-      await assertFails(set(ref(dbUnauth, `/rooms/${roomId}/webrtc/v1/offer`), str(10)));
-    });
-
-    it('authenticated users cannot write offer if room does not exist', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-
-      const dbOwner = env.authenticatedContext(ownerUid).database();
-      await assertFails(set(ref(dbOwner, `/rooms/${roomId}/webrtc/v1/offer`), str(10)));
-    });
-
-    it('owner cannot write offer before KC artifacts exist', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-
-      await seedRoom(env, roomId, ownerUid);
-
-      const dbOwner = env.authenticatedContext(ownerUid).database();
-      await assertFails(set(ref(dbOwner, `/rooms/${roomId}/webrtc/v1/offer`), str(10)));
-    });
-
-    it('non-owner cannot write offer even if KC artifacts exist', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const attackerUid = mkUid('attacker');
-
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-
-      const dbAttacker = env.authenticatedContext(attackerUid).database();
-      await assertFails(set(ref(dbAttacker, `/rooms/${roomId}/webrtc/v1/offer`), str(10)));
-    });
-
-    it('owner can write offer once after KC artifacts exist', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-
-      const dbOwner = env.authenticatedContext(ownerUid).database();
-      await assertSucceeds(set(ref(dbOwner, `/rooms/${roomId}/webrtc/v1/offer`), str(10)));
-    });
-
-    it('offer is write-once: second write must fail', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-
-      const dbOwner = env.authenticatedContext(ownerUid).database();
-      await assertSucceeds(set(ref(dbOwner, `/rooms/${roomId}/webrtc/v1/offer`), str(10)));
-      await assertFails(set(ref(dbOwner, `/rooms/${roomId}/webrtc/v1/offer`), str(11)));
-    });
-
-    it('offer delete must fail (writeOnce implies no delete)', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-
-      const dbOwner = env.authenticatedContext(ownerUid).database();
-      await assertSucceeds(set(ref(dbOwner, `/rooms/${roomId}/webrtc/v1/offer`), str(10)));
-      await assertFails(set(ref(dbOwner, `/rooms/${roomId}/webrtc/v1/offer`), null));
-    });
-
-    it('offer validation: empty string must fail', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-
-      const dbOwner = env.authenticatedContext(ownerUid).database();
-      await assertFails(set(ref(dbOwner, `/rooms/${roomId}/webrtc/v1/offer`), ''));
-    });
-
-    it('offer validation: too long must fail, max length must succeed', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-
-      const dbOwner = env.authenticatedContext(ownerUid).database();
-
-      await assertSucceeds(
-        set(ref(dbOwner, `/rooms/${roomId}/webrtc/v1/offer`), str(MAX_LEN_WEBRTC, 'O')),
-      );
-
-      // reset DB for the failing branch (write-once)
-      await env.clearDatabase();
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-
-      const dbOwner2 = env.authenticatedContext(ownerUid).database();
-      await assertFails(
-        set(ref(dbOwner2, `/rooms/${roomId}/webrtc/v1/offer`), str(MAX_LEN_WEBRTC + 1, 'O')),
-      );
-    });
-
-    it('cannot write unknown fields under webrtc/v1', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-
-      const dbOwner = env.authenticatedContext(ownerUid).database();
-      await assertFails(set(ref(dbOwner, `/rooms/${roomId}/webrtc/v1/evil`), str(10)));
-      await assertFails(set(ref(dbOwner, `/rooms/${roomId}/webrtc/v2/offer`), str(10)));
-    });
+  beforeEach(async () => {
+    env = getTestEnv();
+    await env.clearDatabase();
   });
 
-  describe('answer', () => {
-    it('unauthenticated users cannot write answer', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const responderUid = mkUid('responder');
+  it('messages read: unauth cannot read rooms/meta', async () => {
+    const roomId = mkRoomId();
+    const creator = mkUid('creator');
+    await seedRoomBase(env, roomId, creator);
 
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-      await seedOffer(env, roomId, str(10, 'O'));
+    const db = env.unauthenticatedContext().database() as unknown as Database;
+    await assertFails(get(ref(db, `/rooms/${roomId}/meta/state`)));
+  });
 
-      const dbUnauth = env.unauthenticatedContext().database();
-      await assertFails(set(ref(dbUnauth, `/rooms/${roomId}/webrtc/v1/answer`), str(10, 'A')));
+  it('meta read: any auth can read /rooms/{roomId}/meta/state', async () => {
+    const roomId = mkRoomId();
+    const creator = mkUid('creator');
+    await seedRoomBase(env, roomId, creator);
 
-      // sanity: authenticated responder is allowed in the happy-path prerequisites
-      const dbResponder = env.authenticatedContext(responderUid).database();
-      await assertSucceeds(
-        set(ref(dbResponder, `/rooms/${roomId}/webrtc/v1/answer`), str(10, 'A')),
-      );
+    const randomUser = mkUid('random');
+    const db = env.authenticatedContext(randomUser).database() as unknown as Database;
+
+    const snap = await assertSucceeds(get(ref(db, `/rooms/${roomId}/meta/state`)));
+    expect(snap.exists()).toBe(true);
+    expect(Number(snap.val())).toBe(1);
+  });
+
+  it('creator: can write creator/pake/msg only once and only when state>=1 exists', async () => {
+    const roomId = mkRoomId();
+    const creator = mkUid('creator');
+    await seedRoomBase(env, roomId, creator);
+
+    const creatorDb = env.authenticatedContext(creator).database() as unknown as Database;
+
+    // ok
+    await assertSucceeds(set(ref(creatorDb, `/rooms/${roomId}/messages/creator/pake/msg`), 'A'));
+
+    // second write denied (data.exists())
+    await assertFails(set(ref(creatorDb, `/rooms/${roomId}/messages/creator/pake/msg`), 'B'));
+
+    // invalid length > 64 denied (fresh path)
+    const roomId2 = mkRoomId();
+    await seedRoomBase(env, roomId2, creator);
+    await assertFails(
+      set(ref(creatorDb, `/rooms/${roomId2}/messages/creator/pake/msg`), 'x'.repeat(65)),
+    );
+  });
+
+  it('creator: cannot write creator/pake/msg when meta/state missing', async () => {
+    const roomId = mkRoomId();
+    const creator = mkUid('creator');
+
+    // seed without meta/state
+    await adminSet(env, `/rooms/${roomId}`, {
+      private: { creator_uid: creator, responder_uid: null, created_at: nowMs() },
+      // meta missing
     });
 
-    it('owner cannot write answer', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
+    const creatorDb = env.authenticatedContext(creator).database() as unknown as Database;
+    await assertFails(set(ref(creatorDb, `/rooms/${roomId}/messages/creator/pake/msg`), 'A'));
+  });
 
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-      await seedOffer(env, roomId, str(10, 'O'));
+  it('role separation: non-creator cannot write creator branch', async () => {
+    const roomId = mkRoomId();
+    const creator = mkUid('creator');
+    const other = mkUid('other');
+    await seedRoomBase(env, roomId, creator);
 
-      const dbOwner = env.authenticatedContext(ownerUid).database();
-      await assertFails(set(ref(dbOwner, `/rooms/${roomId}/webrtc/v1/answer`), str(10, 'A')));
-    });
+    const otherDb = env.authenticatedContext(other).database() as unknown as Database;
+    await assertFails(set(ref(otherDb, `/rooms/${roomId}/messages/creator/pake/msg`), 'A'));
+  });
 
-    it('non-owner cannot write answer before offer exists', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const responderUid = mkUid('responder');
+  it('creator: mac_tag requires creator msg; rtc requires mac_tag', async () => {
+    const roomId = mkRoomId();
+    const creator = mkUid('creator');
+    await seedRoomBase(env, roomId, creator);
 
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
+    const db = env.authenticatedContext(creator).database() as unknown as Database;
 
-      const dbResponder = env.authenticatedContext(responderUid).database();
-      await assertFails(set(ref(dbResponder, `/rooms/${roomId}/webrtc/v1/answer`), str(10, 'A')));
-    });
+    // mac_tag before msg => denied
+    await assertFails(set(ref(db, `/rooms/${roomId}/messages/creator/pake/mac_tag`), 'T'));
 
-    it('non-owner cannot write answer before KC artifacts exist (even if offer exists)', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const responderUid = mkUid('responder');
+    // write msg then mac_tag ok
+    await assertSucceeds(set(ref(db, `/rooms/${roomId}/messages/creator/pake/msg`), 'A'));
+    await assertSucceeds(set(ref(db, `/rooms/${roomId}/messages/creator/pake/mac_tag`), 'T'));
 
-      await seedRoom(env, roomId, ownerUid);
-      await seedOffer(env, roomId, str(10, 'O'));
+    // rtc before mac_tag (fresh room) denied
+    const roomId2 = mkRoomId();
+    await seedRoomBase(env, roomId2, creator);
+    const db2 = env.authenticatedContext(creator).database() as unknown as Database;
+    await assertSucceeds(set(ref(db2, `/rooms/${roomId2}/messages/creator/pake/msg`), 'A'));
+    await assertFails(set(ref(db2, `/rooms/${roomId2}/messages/creator/rtc/msg`), 'OFFER'));
 
-      const dbResponder = env.authenticatedContext(responderUid).database();
-      await assertFails(set(ref(dbResponder, `/rooms/${roomId}/webrtc/v1/answer`), str(10, 'A')));
-    });
+    // rtc after mac_tag ok
+    await assertSucceeds(set(ref(db2, `/rooms/${roomId2}/messages/creator/pake/mac_tag`), 'T'));
+    await assertSucceeds(set(ref(db2, `/rooms/${roomId2}/messages/creator/rtc/msg`), 'OFFER'));
+  });
 
-    it('non-owner can write answer once after offer + KC exist', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const responderUid = mkUid('responder');
+  it('responder: cannot write responder msg when state<2 or responder_uid is null', async () => {
+    const roomId = mkRoomId();
+    const creator = mkUid('creator');
+    const responder = mkUid('responder');
+    await seedRoomBase(env, roomId, creator); // state=1, responder_uid=null
 
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-      await seedOffer(env, roomId, str(10, 'O'));
+    const responderDb = env.authenticatedContext(responder).database() as unknown as Database;
+    await assertFails(set(ref(responderDb, `/rooms/${roomId}/messages/responder/pake/msg`), 'B'));
 
-      const dbResponder = env.authenticatedContext(responderUid).database();
-      await assertSucceeds(
-        set(ref(dbResponder, `/rooms/${roomId}/webrtc/v1/answer`), str(10, 'A')),
-      );
-    });
+    // even if state=2, but responder_uid still null => should still fail (auth.uid check)
+    await adminSet(env, `/rooms/${roomId}/meta/state`, 2);
+    await assertFails(set(ref(responderDb, `/rooms/${roomId}/messages/responder/pake/msg`), 'B'));
+  });
 
-    it('answer is write-once: second write must fail', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const responderUid = mkUid('responder');
+  it('responder: can write responder branch only when joined (responder_uid) and state>=2; ordering enforced', async () => {
+    const roomId = mkRoomId();
+    const creator = mkUid('creator');
+    const responder = mkUid('responder');
+    await seedRoomBase(env, roomId, creator);
+    await seedResponderJoined(env, roomId, responder); // state=2, responder_uid set
 
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-      await seedOffer(env, roomId, str(10, 'O'));
+    const db = env.authenticatedContext(responder).database() as unknown as Database;
 
-      const dbResponder = env.authenticatedContext(responderUid).database();
-      await assertSucceeds(
-        set(ref(dbResponder, `/rooms/${roomId}/webrtc/v1/answer`), str(10, 'A')),
-      );
-      await assertFails(set(ref(dbResponder, `/rooms/${roomId}/webrtc/v1/answer`), str(11, 'A')));
-    });
+    // msg ok
+    await assertSucceeds(set(ref(db, `/rooms/${roomId}/messages/responder/pake/msg`), 'B'));
 
-    it('answer delete must fail (writeOnce implies no delete)', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const responderUid = mkUid('responder');
+    // mac_tag ok only after msg
+    await assertSucceeds(set(ref(db, `/rooms/${roomId}/messages/responder/pake/mac_tag`), 'TB'));
 
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-      await seedOffer(env, roomId, str(10, 'O'));
+    // rtc ok only after mac_tag
+    await assertSucceeds(set(ref(db, `/rooms/${roomId}/messages/responder/rtc/msg`), 'ANSWER'));
 
-      const dbResponder = env.authenticatedContext(responderUid).database();
-      await assertSucceeds(
-        set(ref(dbResponder, `/rooms/${roomId}/webrtc/v1/answer`), str(10, 'A')),
-      );
-      await assertFails(set(ref(dbResponder, `/rooms/${roomId}/webrtc/v1/answer`), null));
-    });
+    // cannot overwrite
+    await assertFails(set(ref(db, `/rooms/${roomId}/messages/responder/pake/msg`), 'B2'));
+  });
 
-    it('answer validation: empty string must fail', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const responderUid = mkUid('responder');
+  it('messages read: only participants can read messages', async () => {
+    const roomId = mkRoomId();
+    const creator = mkUid('creator');
+    const responder = mkUid('responder');
+    const outsider = mkUid('outsider');
 
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-      await seedOffer(env, roomId, str(10, 'O'));
+    await seedRoomBase(env, roomId, creator);
+    await seedResponderJoined(env, roomId, responder);
+    await seedAllMessagesPresent(env, roomId);
 
-      const dbResponder = env.authenticatedContext(responderUid).database();
-      await assertFails(set(ref(dbResponder, `/rooms/${roomId}/webrtc/v1/answer`), ''));
-    });
+    const creatorDb = env.authenticatedContext(creator).database() as unknown as Database;
+    const responderDb = env.authenticatedContext(responder).database() as unknown as Database;
+    const outsiderDb = env.authenticatedContext(outsider).database() as unknown as Database;
 
-    it('answer validation: too long must fail, max length must succeed', async () => {
-      const env = getTestEnv();
-      const roomId = mkRoomId();
-      const ownerUid = mkUid('owner');
-      const responderUid = mkUid('responder');
+    await assertSucceeds(get(ref(creatorDb, `/rooms/${roomId}/messages`)));
+    await assertSucceeds(get(ref(responderDb, `/rooms/${roomId}/messages`)));
+    await assertFails(get(ref(outsiderDb, `/rooms/${roomId}/messages`)));
+  });
 
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-      await seedOffer(env, roomId, str(10, 'O'));
+  it('meta/state write: cannot set 1 or 2 from client', async () => {
+    const roomId = mkRoomId();
+    const creator = mkUid('creator');
+    await seedRoomBase(env, roomId, creator);
 
-      const dbResponder = env.authenticatedContext(responderUid).database();
-      await assertSucceeds(
-        set(ref(dbResponder, `/rooms/${roomId}/webrtc/v1/answer`), str(MAX_LEN_WEBRTC, 'A')),
-      );
+    const db = env.authenticatedContext(creator).database() as unknown as Database;
 
-      // reset DB for the failing branch (write-once)
-      await env.clearDatabase();
-      await seedRoom(env, roomId, ownerUid);
-      await seedKcs(env, roomId);
-      await seedOffer(env, roomId, str(10, 'O'));
+    await assertFails(set(ref(db, `/rooms/${roomId}/meta/state`), 1));
+    await assertFails(set(ref(db, `/rooms/${roomId}/meta/state`), 2));
+  });
 
-      const dbResponder2 = env.authenticatedContext(responderUid).database();
-      await assertFails(
-        set(ref(dbResponder2, `/rooms/${roomId}/webrtc/v1/answer`), str(MAX_LEN_WEBRTC + 1, 'A')),
-      );
-    });
+  it('meta/state finalize: cannot set 3 until all required messages exist', async () => {
+    const roomId = mkRoomId();
+    const creator = mkUid('creator');
+    const responder = mkUid('responder');
+    await seedRoomBase(env, roomId, creator);
+    await seedResponderJoined(env, roomId, responder);
+
+    const creatorDb = env.authenticatedContext(creator).database() as unknown as Database;
+
+    // no messages yet => deny
+    await assertFails(set(ref(creatorDb, `/rooms/${roomId}/meta/state`), 3));
+
+    // partial messages => still deny
+    await adminSet(env, `/rooms/${roomId}/messages/creator/pake/msg`, 'a');
+    await adminSet(env, `/rooms/${roomId}/messages/creator/pake/mac_tag`, 'b');
+    await adminSet(env, `/rooms/${roomId}/messages/creator/rtc/msg`, 'c');
+    await assertFails(set(ref(creatorDb, `/rooms/${roomId}/meta/state`), 3));
+  });
+
+  it('meta/state finalize: participants can set 3 only when all messages exist; outsider cannot', async () => {
+    const roomId = mkRoomId();
+    const creator = mkUid('creator');
+    const responder = mkUid('responder');
+    const outsider = mkUid('outsider');
+
+    await seedRoomBase(env, roomId, creator);
+    await seedResponderJoined(env, roomId, responder);
+    await seedAllMessagesPresent(env, roomId);
+
+    const creatorDb = env.authenticatedContext(creator).database() as unknown as Database;
+    const responderDb = env.authenticatedContext(responder).database() as unknown as Database;
+    const outsiderDb = env.authenticatedContext(outsider).database() as unknown as Database;
+
+    await assertFails(set(ref(outsiderDb, `/rooms/${roomId}/meta/state`), 3));
+    await assertSucceeds(set(ref(creatorDb, `/rooms/${roomId}/meta/state`), 3));
+
+    // (опционально) второй участник тоже должен иметь право, если room ещё существует
+    // В этом тесте после state=3 функции могут удалить room (если emulator функций поднят),
+    // поэтому не делаем второй set здесь, чтобы избежать гонок.
+    await assertSucceeds(get(ref(responderDb, `/rooms/${roomId}/meta/state`)));
   });
 });

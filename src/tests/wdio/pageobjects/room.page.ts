@@ -149,32 +149,13 @@ class RoomPage extends Page {
   ): Promise<void> {
     await this.transfersCard.waitForDisplayed({ timeout: 7000 });
 
-    const expectedDir = dir.toLowerCase();
-    const expectedFileName = fileName.toLowerCase();
-    const statusMark = `- ${status}`.toLowerCase();
-    await this.browser.waitUntil(
-      async () => {
-        const rows = await this.transfersCard.$$('div.border-t');
-        if (rows.length === 0) return false;
+    const expectedDir = asXPathLiteral(dir.toLowerCase());
+    const expectedFileName = asXPathLiteral(fileName);
+    const statusMark = asXPathLiteral(`- ${status.toLowerCase()}`);
+    const transferRowSelector = `.//div[contains(@class,"border-t") and .//span[translate(normalize-space(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")=${expectedDir}] and .//div[contains(@class,"truncate") and contains(normalize-space(), ${expectedFileName}) and contains(translate(normalize-space(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), ${statusMark})]]`;
 
-        for (const row of rows) {
-          if (!row) continue;
-          let text = '';
-          try {
-            text = (await row.getText()).toLowerCase();
-          } catch {
-            continue;
-          }
-          if (
-            text.includes(expectedDir) &&
-            text.includes(expectedFileName) &&
-            text.includes(statusMark)
-          ) {
-            return true;
-          }
-        }
-        return false;
-      },
+    await this.browser.waitUntil(
+      async () => this.transfersCard.$(transferRowSelector).isExisting(),
       {
         timeout,
         timeoutMsg: `transfer ${dir}/${fileName} did not reach status "${status}"`,

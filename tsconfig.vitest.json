@@ -1,13 +1,14 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.vitest.tsbuildinfo",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "allowImportingTsExtensions": true,
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
     "types": ["node", "vitest/globals"]
   },
-  "include": [
-    "src/**/*.unit.{test,spec}.ts",
-    "src/**/*.int.{test,spec}.ts",
-    "src/**/*.e2e-vitest.{test,spec}.ts",
-    "src/tests/**/*.ts"
-  ]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "functions/src/**/*.ts"],
+  "exclude": ["src/tests/wdio/**"]
 }
