@@ -59,18 +59,6 @@ export default defineConfig(async ({ mode }) => {
           },
           ssr: { noExternal: ['wrtc'] },
         },
-        {
-          extends: true,
-          test: {
-            name: 'e2e-vitest',
-            include: ['**/*.e2e-vitest.{test,spec}.ts?(x)'],
-            setupFiles: ['src/tests/setup/node-webrtc.ts'],
-            environment: 'node',
-            testTimeout: 240_000,
-            hookTimeout: 240_000,
-          },
-          ssr: { noExternal: ['wrtc'] },
-        },
       ],
     },
   });
