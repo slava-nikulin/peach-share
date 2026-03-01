@@ -136,7 +136,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   let createdEmulatorEnvLocal = false;
 
   if (!existsSync(emulatorEnvLocalPath)) {
-    writeFileSync(emulatorEnvLocalPath, 'PEACH_FUNCTION_REGION=us-central1\n', { encoding: 'utf8' });
+    writeFileSync(emulatorEnvLocalPath, 'PEACH_FUNCTION_REGION=us-central1\n', {
+      encoding: 'utf8',
+    });
     createdEmulatorEnvLocal = true;
   }
 
