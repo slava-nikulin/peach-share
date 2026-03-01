@@ -25,6 +25,8 @@ export default defineConfig(({ mode }) => {
     },
     optimizeDeps: {
       include: ['process/browser', 'util'],
+      // Keep cpace-ts as native ESM so wasm URL resolution stays relative to package files.
+      exclude: ['cpace-ts', 'cpace-ts/wasm'],
     },
     server: {
       host: true,

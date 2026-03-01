@@ -304,9 +304,8 @@ export async function runJanitorOnce(opts?: {
   return { cutoff, roomsDeleted, slotsDeleted, usersDeleted };
 }
 
-// cron wrapper (оставь как было, только вызывай runJanitorOnce)
 export const janitor: ReturnType<typeof onSchedule> = onSchedule(
-  { schedule: 'every day 03:00', timeZone: 'Asia/Almaty' },
+  { schedule: 'every day 03:00' },
   async () => {
     const res = await runJanitorOnce();
     logger.info('janitor completed', res);

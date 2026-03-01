@@ -10,6 +10,7 @@ import type { PakePort, PakeRole, PakeSessionId } from '../../bll/ports/pake';
 
 export class CpaceEngine implements PakePort {
   private readonly sessions = new Map<PakeSessionId, CPaceSession>();
+  private static readonly EMPTY_AD = new Uint8Array(0);
 
   newSession(role: PakeRole, prs: Uint8Array): PakeSessionId {
     const suite = {
@@ -25,7 +26,6 @@ export class CpaceEngine implements PakePort {
       suite,
       mode,
       role: role as CPaceRole,
-      // ci/sid/ada/adb пока не задаём (как в твоём тесте)
     });
 
     const id = this.genId();
@@ -43,9 +43,13 @@ export class CpaceEngine implements PakePort {
 
   async receive(sessionId: PakeSessionId, payload: Uint8Array): Promise<Uint8Array> {
     const s = this.must(sessionId);
-    const inbound: CPaceMessage = { type: 'msg', payload };
+    const inbound: CPaceMessage = {
+      type: 'msg',
+      payload,
+      ad: CpaceEngine.EMPTY_AD,
+    };
     const out = await s.receive(inbound);
-    if (!out) return new Uint8Array(); // initiator final receive => empty
+    if (!out) return new Uint8Array();
     this.assertMsg(out, 'receive');
     return out.payload;
   }
@@ -66,7 +70,6 @@ export class CpaceEngine implements PakePort {
   }
 
   private genId(): string {
-    // достаточно для in-memory; можно заменить на crypto.randomUUID() если доступно
     return `ps_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
   }
 

@@ -9,6 +9,6 @@
     "jsxImportSource": "solid-js",
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "functions/src/**/*.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
   "exclude": ["src/tests/wdio/**"]
 }

@@ -114,7 +114,8 @@ describe('janitor integration', () => {
 
     if (!runJanitorOnce) {
       // Важно: импортировать ПОСЛЕ установки env vars, чтобы admin SDK точно подключился к emulator
-      const mod = await import('../../../../../functions/src/index');
+      const functionsModulePath = '../../../../../functions/src/index';
+      const mod = await import(functionsModulePath);
       runJanitorOnce = mod.runJanitorOnce as typeof runJanitorOnce;
     }
   });
