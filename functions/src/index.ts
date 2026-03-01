@@ -3,7 +3,10 @@ import { type Database, getDatabase, getDatabaseWithUrl } from 'firebase-admin/d
 import * as logger from 'firebase-functions/logger';
 import { onValueWritten } from 'firebase-functions/v2/database';
 import { onRequest } from 'firebase-functions/v2/https';
+import { setGlobalOptions } from 'firebase-functions/v2/options';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+
+setGlobalOptions({ region: process.env.FUNCTION_REGION ?? 'europe-west1' });
 
 const emulatorHost: string | undefined = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
 const projectId: string =

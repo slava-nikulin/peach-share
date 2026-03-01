@@ -64,7 +64,7 @@ jobs:
       - run: pnpm i -g firebase-tools
 
       - name: Deploy functions
-        run: firebase deploy --only functions --project ${{ vars.FIREBASE_PROJECT_ID }}
+        run: firebase deploy --only functions --project ${{ vars.FIREBASE_PROJECT_ID }} --force
 
   deploy_pages:
     needs: deploy_functions
