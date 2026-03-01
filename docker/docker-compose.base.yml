@@ -30,6 +30,7 @@ services:
     working_dir: /src
     volumes:
       - ..:/src:delegated
+      - web-node-modules:/src/node_modules
       - pnpm-store:/var/pnpm-store
     environment:
       MODE: emu
@@ -47,6 +48,7 @@ services:
     profiles: ['emu', 'e2e']
 
 volumes:
+  web-node-modules:
   pnpm-store:
   firebase-emulator-cache:
   firebase-emulator-cache-ui:

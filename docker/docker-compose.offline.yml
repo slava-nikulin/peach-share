@@ -92,7 +92,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "code=$$(curl -k -s -o /tmp/proxy-health.html -w '%{http_code}' https://localhost:8443/ || true); [ \"$$code\" = \"200\" ] && ! grep -qi '404 page not found' /tmp/proxy-health.html",
+          "code=$$(curl -k -L -s -o /tmp/proxy-health.html -w '%{http_code}' https://localhost:8443/ || true); [ \"$$code\" = \"200\" ] && ! grep -qi '404 page not found' /tmp/proxy-health.html",
         ]
       interval: 1s
       timeout: 2s

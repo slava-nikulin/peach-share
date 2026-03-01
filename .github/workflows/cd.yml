@@ -3,6 +3,18 @@ name: CD
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_functions:
+        description: 'Deploy Firebase Functions'
+        type: boolean
+        required: true
+        default: false
+      deploy_pages:
+        description: 'Deploy GitHub Pages'
+        type: boolean
+        required: true
+        default: true
 
 concurrency:
   group: cd-${{ github.ref }}
@@ -10,6 +22,7 @@ concurrency:
 
 jobs:
   build_test:
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.deploy_pages || inputs.deploy_functions)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -36,6 +49,7 @@ jobs:
           path: dist/
 
   deploy_functions:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_functions }}
     needs: build_test
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -70,10 +84,11 @@ jobs:
       - name: Deploy functions
         env:
           PEACH_FUNCTION_REGION: ${{ vars.PEACH_FUNCTION_REGION }}
-        run: firebase deploy --only functions --project ${{ vars.FIREBASE_PROJECT_ID }} --force
+        run: firebase deploy --only functions --project ${{ vars.FIREBASE_PROJECT_ID }}
 
   deploy_pages:
-    needs: deploy_functions
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_pages }}
+    needs: build_test
     runs-on: ubuntu-latest
     environment:
       name: github-pages
