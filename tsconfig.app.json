@@ -23,8 +23,6 @@
     "src/**/*.unit.spec.*",
     "src/**/*.int.test.*",
     "src/**/*.int.spec.*",
-    "src/**/*.e2e-vitest.test.*",
-    "src/**/*.e2e-vitest.spec.*",
     "src/tests/**"
   ]
 }

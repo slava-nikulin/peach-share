@@ -60,6 +60,7 @@ jobs:
         with:
           node-version: '24'
 
+      - run: pnpm i --frozen-lockfile
       - run: pnpm i -g firebase-tools
 
       - name: Deploy functions
