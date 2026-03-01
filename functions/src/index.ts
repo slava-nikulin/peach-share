@@ -14,6 +14,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 const emulatorHost: string | undefined = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
 const requestedRegion: string = process.env.PEACH_FUNCTION_REGION ?? 'us-central1';
 const REGION: string = emulatorHost ? 'us-central1' : requestedRegion;
+console.log('deploy-time REGION =', REGION);
 
 const projectId: string =
   process.env.GCLOUD_PROJECT ?? process.env.GOOGLE_CLOUD_PROJECT ?? 'demo-peach-share';
