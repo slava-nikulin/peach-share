@@ -1,7 +1,5 @@
 services:
   rtdb-emulator:
-    volumes:
-      - ../functions/.env.local:/app/functions/.env:ro
     environment:
       NODE_OPTIONS: "--trace-uncaught"
     ports:

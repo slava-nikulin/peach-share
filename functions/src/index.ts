@@ -1,4 +1,4 @@
-console.log('deploy-time FUNCTION_REGION =', process.env.PEACH_FUNCTION_REGION);
+console.log('deploy-time PEACH_FUNCTION_REGION =', process.env.PEACH_FUNCTION_REGION);
 console.log(
   'deploy-time FIREBASE_DATABASE_EMULATOR_HOST =',
   process.env.FIREBASE_DATABASE_EMULATOR_HOST,
