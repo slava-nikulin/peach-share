@@ -1,5 +1,3 @@
-console.log('deploy-time PEACH_FUNCTION_REGION =', process.env.PEACH_FUNCTION_REGION);
-
 import { type App, getApps, initializeApp } from 'firebase-admin/app';
 import { type Database, getDatabase, getDatabaseWithUrl } from 'firebase-admin/database';
 import * as logger from 'firebase-functions/logger';
@@ -7,9 +5,10 @@ import { onValueWritten } from 'firebase-functions/v2/database';
 import { onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 
-const REGION: string = process.env.PEACH_FUNCTION_REGION ?? 'us-central1';
-
 const emulatorHost: string | undefined = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
+const requestedRegion: string = process.env.PEACH_FUNCTION_REGION ?? 'us-central1';
+const REGION: string = emulatorHost ? 'us-central1' : requestedRegion;
+
 const projectId: string =
   process.env.GCLOUD_PROJECT ?? process.env.GOOGLE_CLOUD_PROJECT ?? 'demo-peach-share';
 const emulatorDatabaseUrl: string | undefined = emulatorHost
