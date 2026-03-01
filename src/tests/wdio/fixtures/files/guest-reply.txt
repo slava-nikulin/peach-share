@@ -1,0 +1,3 @@
+Guest fixture: reply
+Version: 1
+This file is shared by guest and downloaded by owner in room happy-path e2e.

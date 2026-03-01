@@ -1,110 +1,107 @@
-x-images:
-  rtdb: &img_rtdb ${REGISTRY:-ghcr.io}/${OWNER:-slava-nikulin}/${REPO:-peach-share}/rtdb-emulator-offline:${TAG:-emu}
-  web: &img_web ${REGISTRY:-ghcr.io}/${OWNER:-slava-nikulin}/${REPO:-peach-share}/web-offline:${TAG:-emu}
-  proxy: &img_proxy ${REGISTRY:-ghcr.io}/${OWNER:-slava-nikulin}/${REPO:-peach-share}/proxy:${TAG:-emu}
-
 services:
-  stun:
-    image: instrumentisto/coturn:latest
-    pull_policy: missing
-    command: >
-      turnserver --stun-only
-      --listening-port=3478
-      --listening-ip=0.0.0.0
-      --no-tls --no-dtls --fingerprint
-    ports:
-      - '3478:3478/udp'
-      - '3478:3478/tcp'
-
   rtdb-emulator:
-    image: *img_rtdb
-    pull_policy: missing
-    environment:
-      PROJECT_ID: demo-peach-share
-      FIREBASE_EMULATORS_PATH: /opt/firebase
+    profiles: ["offline"]
+    # Для offline-режима обычно не нужно публиковать “сырые” порты эмуляторов наружу.
+    # Оставьте UI наружу, если хотите.
     ports:
-      - '4000:4000'
-      - '9000:9000'
-      - '9099:9099'
+      - "4000:4000" # Emulator UI (опционально)
     labels:
-      - 'traefik.enable=true'
-      - 'traefik.http.routers.rtdb-emulator.rule=PathPrefix(`/`)'
-      - 'traefik.http.routers.rtdb-emulator.entrypoints=rtdb-emulator'
-      - 'traefik.http.routers.rtdb-emulator.tls=true'
-      - 'traefik.http.routers.rtdb-emulator.service=rtdb-emulator'
-      - 'traefik.http.services.rtdb-emulator.loadbalancer.server.port=9000'
-      - 'traefik.http.services.rtdb-emulator.loadbalancer.server.scheme=http'
-      - 'traefik.http.routers.rtdb-emulator.middlewares=websocket-middleware@docker'
+      - "traefik.enable=true"
 
-      - 'traefik.http.routers.auth-emulator.rule=PathPrefix(`/`)'
-      - 'traefik.http.routers.auth-emulator.entrypoints=auth-emulator'
-      - 'traefik.http.routers.auth-emulator.tls=true'
-      - 'traefik.http.services.auth-emulator.loadbalancer.server.port=9099'
-      - 'traefik.http.services.auth-emulator.loadbalancer.server.scheme=http'
-      - 'traefik.http.routers.auth-emulator.service=auth-emulator'
-      - 'traefik.http.routers.auth-emulator.middlewares=websocket-middleware@docker'
+      # RTDB over TLS: https://HOST:9443  -> http://rtdb-emulator:9000
+      - "traefik.http.routers.rtdb.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.rtdb.entrypoints=rtdb"
+      - "traefik.http.routers.rtdb.tls=true"
+      - "traefik.http.routers.rtdb.service=rtdb"
+      - "traefik.http.services.rtdb.loadbalancer.server.port=9000"
 
-      - 'traefik.http.middlewares.websocket-middleware.headers.customrequestheaders.Connection=upgrade'
-      - 'traefik.http.middlewares.websocket-middleware.headers.customrequestheaders.Upgrade=websocket'
-    healthcheck:
-      test:
-        [
-          'CMD-SHELL',
-          'curl -fsS http://localhost:9000/health || curl -fsS http://localhost:9000/.json || nc -z 127.0.0.1 9000',
-        ]
-      interval: 5s
-      timeout: 2s
-      retries: 20
-      start_period: 10s
+      # Auth over TLS: https://HOST:9444  -> http://rtdb-emulator:9099
+      - "traefik.http.routers.auth.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.auth.entrypoints=auth"
+      - "traefik.http.routers.auth.tls=true"
+      - "traefik.http.routers.auth.service=auth"
+      - "traefik.http.services.auth.loadbalancer.server.port=9099"
+
+      # Минимальные CORS заголовки (часто не нужны, но безопаснее для кросс-порта)
+      - "traefik.http.middlewares.emu-headers.headers.accesscontrolalloworiginlist=*"
+      - "traefik.http.middlewares.emu-headers.headers.accesscontrolallowmethods=GET,OPTIONS,PUT,POST,DELETE"
+      - "traefik.http.middlewares.emu-headers.headers.accesscontrolallowheaders=*"
+      - "traefik.http.middlewares.emu-headers.headers.addvaryheader=true"
+      - "traefik.http.routers.rtdb.middlewares=emu-headers@docker"
+      - "traefik.http.routers.auth.middlewares=emu-headers@docker"
 
   web:
-    image: *img_web
-    pull_policy: missing
+    profiles: ["offline"]
     environment:
-      HOST_LAN_IP: '${HOST_LAN_IP}'
+      MODE: offline
+      HOST_LAN_IP: "${HOST_LAN_IP}"
+      CHOKIDAR_USEPOLLING: "1"
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "5173:5173" # прямой HTTP (опционально, удобно для отладки на хосте)
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.web.entrypoints=websecure,websecure_alt"
+      - "traefik.http.routers.web.tls=true"
+      - "traefik.http.services.web.loadbalancer.server.port=5173"
     depends_on:
       rtdb-emulator:
         condition: service_healthy
-      stun:
-        condition: service_started
-    ports:
-      - '8080:5173' # прямой HTTP доступ в обход traefik
+
+  # Раздача rootCA клиентам: https://HOST/ca/peachshare-rootCA.crt
+  ca:
+    profiles: ["offline"]
+    image: nginx:alpine
     volumes:
-      - certs-public:/usr/share/nginx/html/ca:ro
+      - certs-public:/usr/share/nginx/html:ro
     labels:
-      - 'traefik.enable=true'
-
-      # HTTPS :443
-      - 'traefik.http.routers.web-https.rule=PathPrefix(`/`)'
-      - 'traefik.http.routers.web-https.entrypoints=websecure'
-      - 'traefik.http.routers.web-https.tls=true'
-      - 'traefik.http.services.web.loadbalancer.server.port=5173'
-
-      # HTTPS :8443
-      - 'traefik.http.routers.web-https-alt.rule=PathPrefix(`/`)'
-      - 'traefik.http.routers.web-https-alt.entrypoints=websecure_alt'
-      - 'traefik.http.routers.web-https-alt.tls=true'
-      - 'traefik.http.services.web.loadbalancer.server.port=5173'
+      - "traefik.enable=true"
+      - "traefik.http.routers.ca.rule=PathPrefix(`/ca`)"
+      - "traefik.http.routers.ca.entrypoints=websecure,websecure_alt"
+      - "traefik.http.routers.ca.tls=true"
+      - "traefik.http.routers.ca.priority=1000"
+      - "traefik.http.middlewares.ca-strip.stripprefix.prefixes=/ca"
+      - "traefik.http.routers.ca.middlewares=ca-strip@docker"
+      - "traefik.http.services.ca.loadbalancer.server.port=80"
 
   proxy:
-    image: *img_proxy
-    pull_policy: missing
-    depends_on:
-      - web
+    profiles: ["offline"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.proxy.offline
     environment:
-      HOST_LAN_IP: '${HOST_LAN_IP}'
-      LEAF_ROTATE_DAYS_BEFORE_EXPIRY: '1'
-      RTDB_HOST_PORT: '9443'
-      AUTH_HOST_PORT: '9444'
+      HOST_LAN_IP: "${HOST_LAN_IP}"
+      FORCE_NEW_CA: "${FORCE_NEW_CA:-false}"
+      LEAF_ROTATE_DAYS_BEFORE_EXPIRY: "${LEAF_ROTATE_DAYS_BEFORE_EXPIRY:-1}"
+      HTTPS_HOST_PORT: "${HTTPS_HOST_PORT:-8443}"
+      RTDB_HOST_PORT: "${RTDB_HOST_PORT:-9443}"
+      AUTH_HOST_PORT: "${AUTH_HOST_PORT:-9444}"
     ports:
-      - '443:443'
-      - '8443:8443'
-      - '9443:9443' # rtdb
-      - '9444:9444' # auth
+      - "443:443"
+      - "8443:8443"
+      - "9443:9443"
+      - "9444:9444"
     volumes:
       - certs-full:/certs
       - certs-public:/certs-public
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ../docker/scripts:/src/docker/scripts:ro
+    entrypoint: ["bash", "/src/docker/scripts/offline-proxy-entrypoint.sh"]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "code=$$(curl -k -s -o /tmp/proxy-health.html -w '%{http_code}' https://localhost:8443/ || true); [ \"$$code\" = \"200\" ] && ! grep -qi '404 page not found' /tmp/proxy-health.html",
+        ]
+      interval: 1s
+      timeout: 2s
+      retries: 60
+      start_period: 2s
+    depends_on:
+      - web
+      - rtdb-emulator
+      - ca
 
 volumes:
   certs-full:

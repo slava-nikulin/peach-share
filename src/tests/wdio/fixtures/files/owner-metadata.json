@@ -1,0 +1,6 @@
+{
+  "fixture": "owner-metadata",
+  "version": 1,
+  "tags": ["wdio", "p2p", "room"],
+  "note": "Used for e2e file exchange verification"
+}

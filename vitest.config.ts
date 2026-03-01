@@ -1,14 +1,29 @@
-import { mergeConfig, type UserConfig } from 'vite';
+import { mergeConfig, type UserConfig, type UserConfigExport } from 'vite';
 import { defineConfig } from 'vitest/config';
 import viteConfig from './vite.config';
 
-const baseViteConfig = viteConfig as UserConfig;
+function resolveViteConfig(
+  config: UserConfigExport,
+  mode: string,
+): UserConfig | Promise<UserConfig> {
+  if (typeof config === 'function') {
+    return config({
+      command: 'serve',
+      mode,
+      isSsrBuild: false,
+      isPreview: false,
+    });
+  }
 
-export default mergeConfig(
-  baseViteConfig,
-  defineConfig({
+  return config;
+}
+
+export default defineConfig(async ({ mode }) => {
+  const baseViteConfig = (await resolveViteConfig(viteConfig, mode)) as UserConfig;
+
+  return mergeConfig(baseViteConfig, {
     test: {
-      globalSetup: ['src/tests/setup/global-testcontainers.ts'],
+      globals: true,
       projects: [
         {
           extends: true,
@@ -22,12 +37,21 @@ export default mergeConfig(
           extends: true,
           test: {
             name: 'integration',
+            globalSetup: ['src/tests/setup/integration-testcontainers.ts'],
             include: ['**/*.int.{test,spec}.ts?(x)'],
-            setupFiles: ['src/tests/setup/node-webrtc.ts'],
+            setupFiles: [
+              'src/tests/setup/node-webrtc.ts',
+              'src/tests/setup/integration-firebase.ts',
+              'src/tests/setup/integration-drand-mock.ts',
+            ],
             environment: 'node',
+            fileParallelism: false,
             testTimeout: 120_000,
             hookTimeout: 120_000,
             poolOptions: {
+              forks: {
+                singleFork: true,
+              },
               threads: {
                 singleThread: true,
               },
@@ -49,5 +73,5 @@ export default mergeConfig(
         },
       ],
     },
-  }),
-);
+  });
+});

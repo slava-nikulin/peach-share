@@ -1,18 +1,4 @@
 services:
-  stun:
-    image: instrumentisto/coturn:latest
-    command: >
-      turnserver --stun-only
-      --listening-port=3478
-      --listening-ip=0.0.0.0
-      --no-tls --no-dtls --fingerprint
-    ports:
-      - target: 3478
-        protocol: udp
-      - target: 3478
-        protocol: tcp
-    profiles: ['stun', 'emu', 'e2e']
-
   rtdb-emulator:
     build:
       context: ..
@@ -21,24 +7,21 @@ services:
     volumes:
       - ./scripts:/app/scripts:ro
       - ./config/firebase:/app/config:ro
+      - ../functions:/app/functions:ro
+      - ../node_modules:/app/node_modules:ro
       - firebase-emulator-cache:/opt/firebase
       - firebase-emulator-cache-ui:/opt/firebase/.cache
     environment:
-      PROJECT_ID: demo-peach-share
       FIREBASE_EMULATOR_DOWNLOAD_PATH: /opt/firebase
       XDG_CACHE_HOME: /opt/firebase/.cache
     healthcheck:
-      test:
-        [
-          'CMD-SHELL',
-          'curl -fsS http://localhost:9000/health || curl -fsS http://localhost:9000/.json || nc -z 127.0.0.1 9000',
-        ]
-      interval: 5s
+      test: ["CMD-SHELL", "sh /app/scripts/emulator-ready.sh"]
+      interval: 2s
       timeout: 2s
-      retries: 20
-      start_period: 10s
+      retries: 90
+      start_period: 5s
     entrypoint: ['/app/scripts/emulator-entrypoint.sh']
-    profiles: ['rtdb', 'emu', 'e2e']
+    profiles: ['integration-test', 'emu', 'e2e']
 
   web:
     build:
@@ -48,7 +31,6 @@ services:
     volumes:
       - ..:/src:delegated
       - pnpm-store:/var/pnpm-store
-      - node_modules:/src/node_modules
     environment:
       MODE: emu
       CHOKIDAR_USEPOLLING: '1'
@@ -62,11 +44,9 @@ services:
     entrypoint: ['/src/docker/scripts/web-entrypoint.sh']
     depends_on:
       - rtdb-emulator
-      - stun
     profiles: ['emu', 'e2e']
 
 volumes:
-  node_modules:
   pnpm-store:
   firebase-emulator-cache:
   firebase-emulator-cache-ui:

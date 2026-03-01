@@ -8,5 +8,5 @@ ENV PATH="$JAVA_HOME/bin:$PATH"
 
 ENV FIREBASE_EMULATOR_DOWNLOAD_PATH=/opt/firebase
 ENV XDG_CACHE_HOME=/opt/firebase/.cache
-RUN npm i -g firebase-tools
+RUN npm i -g firebase-tools@15.4.0
 RUN mkdir -p /opt/firebase /opt/firebase/.cache && firebase setup:emulators:database && firebase setup:emulators:ui

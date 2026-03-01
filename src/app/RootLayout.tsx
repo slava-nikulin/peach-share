@@ -1,0 +1,44 @@
+import { A, type RouteSectionProps, useCurrentMatches } from '@solidjs/router';
+import type { Component, ParentComponent } from 'solid-js';
+import { createMemo, Suspense } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
+
+interface RouteInfo {
+  navBar?: Component;
+}
+
+export const RootLayout: ParentComponent<RouteSectionProps> = (props: RouteSectionProps) => {
+  const matches = useCurrentMatches();
+
+  const NavBar = createMemo<Component | undefined>(() => {
+    const ms = matches();
+    for (let i = ms.length - 1; i >= 0; i--) {
+      const info = ms[i].route.info as RouteInfo | undefined;
+      if (info?.navBar) return info.navBar;
+    }
+    return undefined;
+  });
+
+  return (
+    <div class="min-h-screen bg-gradient-to-br from-rose-50 via-orange-50 to-amber-50 text-slate-800">
+      <header class="sticky top-0 z-30 border-white/60 border-b bg-white/70 backdrop-blur">
+        <nav class="mx-auto flex w-full max-w-[min(92vw,1400px)] items-center justify-between px-4 py-3">
+          <A href="/" class="inline-flex items-center gap-2">
+            <span class="h-8 w-8 rounded-2xl border border-orange-300 bg-orange-200 shadow-sm" />
+            <span class="font-semibold text-2xl tracking-tight">Peach Share</span>
+          </A>
+
+          <div class="flex items-center gap-2">
+            <Suspense fallback={null}>
+              <Dynamic component={NavBar()} />
+            </Suspense>
+          </div>
+        </nav>
+      </header>
+
+      <main class="mx-auto w-full max-w-[min(92vw,1400px)] px-4 py-8">
+        <Suspense fallback={null}>{props.children}</Suspense>
+      </main>
+    </div>
+  );
+};

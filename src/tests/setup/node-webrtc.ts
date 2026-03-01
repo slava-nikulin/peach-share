@@ -1,4 +1,3 @@
-// tests/setup/node-webrtc.ts
 import { webcrypto } from 'node:crypto';
 
 type WrtcModule = typeof import('@avahq/wrtc');
