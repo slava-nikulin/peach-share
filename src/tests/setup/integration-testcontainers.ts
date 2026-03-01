@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { type Database, type DataSnapshot, get, onValue, ref, set } from 'firebase/database';
@@ -132,6 +132,15 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
   const composeDir = resolve(process.cwd(), 'docker');
   const functionsDir = resolve(process.cwd(), 'functions');
+  const emulatorEnvLocalPath = resolve(functionsDir, '.env.local');
+  let createdEmulatorEnvLocal = false;
+
+  if (!existsSync(emulatorEnvLocalPath)) {
+    writeFileSync(emulatorEnvLocalPath, 'PEACH_FUNCTION_REGION=us-central1\n', {
+      encoding: 'utf8',
+    });
+    createdEmulatorEnvLocal = true;
+  }
 
   execFileSync('pnpm', ['--dir', functionsDir, 'build'], {
     cwd: process.cwd(),
@@ -155,6 +164,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     try {
       if (!keepDocker) {
         await env.down();
+      }
+      if (createdEmulatorEnvLocal && existsSync(emulatorEnvLocalPath)) {
+        unlinkSync(emulatorEnvLocalPath);
       }
     } finally {
       delete g.__itEnv;
