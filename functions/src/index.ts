@@ -1,4 +1,4 @@
-console.log('deploy-time FUNCTION_REGION =', process.env.FUNCTION_REGION);
+console.log('deploy-time PEACH_FUNCTION_REGION =', process.env.PEACH_FUNCTION_REGION);
 
 import { type App, getApps, initializeApp } from 'firebase-admin/app';
 import { type Database, getDatabase, getDatabaseWithUrl } from 'firebase-admin/database';
@@ -7,7 +7,7 @@ import { onValueWritten } from 'firebase-functions/v2/database';
 import { onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 
-const REGION: string = process.env.FUNCTION_REGION ?? 'us-central1';
+const REGION: string = process.env.PEACH_FUNCTION_REGION ?? 'us-central1';
 
 const emulatorHost: string | undefined = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
 const projectId: string =

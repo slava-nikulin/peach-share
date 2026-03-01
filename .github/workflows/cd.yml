@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      FUNCTION_REGION: ${{ vars.FUNCTION_REGION }}
+      PEACH_FUNCTION_REGION: ${{ vars.PEACH_FUNCTION_REGION }}
     permissions:
       contents: read
       id-token: write
@@ -65,11 +65,11 @@ jobs:
       - run: pnpm i --frozen-lockfile
       - run: pnpm i -g firebase-tools
 
-      - run: node -e "console.log('FUNCTION_REGION=', process.env.FUNCTION_REGION)"
+      - run: node -e "console.log('PEACH_FUNCTION_REGION=', process.env.PEACH_FUNCTION_REGION)"
 
       - name: Deploy functions
         env:
-          FUNCTION_REGION: ${{ vars.FUNCTION_REGION }}
+          PEACH_FUNCTION_REGION: ${{ vars.PEACH_FUNCTION_REGION }}
         run: firebase deploy --only functions --project ${{ vars.FIREBASE_PROJECT_ID }} --force
 
   deploy_pages:
