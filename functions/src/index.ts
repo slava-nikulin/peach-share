@@ -1,12 +1,13 @@
+console.log('deploy-time FUNCTION_REGION =', process.env.FUNCTION_REGION);
+
 import { type App, getApps, initializeApp } from 'firebase-admin/app';
 import { type Database, getDatabase, getDatabaseWithUrl } from 'firebase-admin/database';
 import * as logger from 'firebase-functions/logger';
 import { onValueWritten } from 'firebase-functions/v2/database';
 import { onRequest } from 'firebase-functions/v2/https';
-import { setGlobalOptions } from 'firebase-functions/v2/options';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 
-setGlobalOptions({ region: process.env.FUNCTION_REGION ?? 'us-central1' });
+const REGION: string = process.env.FUNCTION_REGION ?? 'us-central1';
 
 const emulatorHost: string | undefined = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
 const projectId: string =
@@ -48,7 +49,7 @@ const cloneRecord = (value: unknown): JsonRecord | null => {
   return JSON.parse(JSON.stringify(value)) as JsonRecord;
 };
 
-export const health: ReturnType<typeof onRequest> = onRequest((_req, res) => {
+export const health: ReturnType<typeof onRequest> = onRequest({ region: REGION }, (_req, res) => {
   res.status(200).send('ok');
 });
 
@@ -107,7 +108,7 @@ function applyResponderJoin(current: unknown, uid: string): JsonRecord | undefin
 }
 
 export const registerCreator: ReturnType<typeof onValueWritten> = onValueWritten(
-  '/{uid}/create',
+  { ref: '/{uid}/create', region: REGION },
   async (event) => {
     const uid = String(event.params.uid);
     const after = event.data.after;
@@ -126,7 +127,7 @@ export const registerCreator: ReturnType<typeof onValueWritten> = onValueWritten
 );
 
 export const registerResponder: ReturnType<typeof onValueWritten> = onValueWritten(
-  '/{uid}/join',
+  { ref: '/{uid}/join', region: REGION },
   async (event) => {
     const uid = String(event.params.uid);
     const after = event.data.after;
@@ -147,7 +148,7 @@ export const registerResponder: ReturnType<typeof onValueWritten> = onValueWritt
 );
 
 export const deleteRoomOnFinalized: ReturnType<typeof onValueWritten> = onValueWritten(
-  '/rooms/{roomId}/meta/state',
+  { ref: '/rooms/{roomId}/meta/state', region: REGION },
   async (event) => {
     const { roomId } = event.params;
 
@@ -308,7 +309,7 @@ export async function runJanitorOnce(opts?: {
 }
 
 export const janitor: ReturnType<typeof onSchedule> = onSchedule(
-  { schedule: 'every day 03:00' },
+  { schedule: 'every day 03:00', region: REGION },
   async () => {
     const res = await runJanitorOnce();
     logger.info('janitor completed', res);
