@@ -11,6 +11,7 @@ export default defineConfig(({ mode }) => {
   const isOfflineMode = mode === 'offline';
 
   return {
+    base: mode === 'production' ? '/peach-share/' : '/',
     plugins: [solid(), tailwindcss()],
     define: {
       global: 'globalThis',
