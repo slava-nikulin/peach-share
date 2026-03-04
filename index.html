@@ -1,16 +1,60 @@
 <!doctype html>
 <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
 
-<head>
-  <meta charset="UTF-8" />
-  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Peach Share</title>
-</head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ffffff" />
 
-<body>
-  <div id="root"></div>
-  <script type="module" src="/src/index.tsx"></script>
-</body>
+    <!-- Primary SEO -->
+    <title>Peach Share — P2P WebRTC file sharing</title>
+    <meta
+      name="description"
+      content="Send files directly to your peer via WebRTC. Pair using a 6-digit room code, confirm create/join, then transfer."
+    />
+    <link rel="canonical" href="https://slava-nikulin.github.io/peach-share/" />
 
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Peach Share" />
+    <meta property="og:title" content="Peach Share — P2P WebRTC file sharing" />
+    <meta
+      property="og:description"
+      content="Send files directly to your peer via WebRTC. Pair using a 6-digit room code."
+    />
+    <meta property="og:url" content="https://slava-nikulin.github.io/peach-share/" />
+    <meta property="og:image" content="https://slava-nikulin.github.io/peach-share/peach-share-og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Peach Share — P2P WebRTC file sharing" />
+    <meta
+      name="twitter:description"
+      content="Send files directly to your peer via WebRTC. Pair using a 6-digit room code."
+    />
+    <meta name="twitter:image" content="https://slava-nikulin.github.io/peach-share/peach-share-og.png" />
+
+    <link
+      rel="icon"
+      href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🍑</text></svg>'
+    />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Peach Share",
+        "url": "https://slava-nikulin.github.io/peach-share/",
+        "description": "P2P WebRTC file sharing in your browser.",
+        "sameAs": ["https://github.com/slava-nikulin/peach-share"]
+      }
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
 </html>

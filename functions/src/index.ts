@@ -1,9 +1,3 @@
-console.log('deploy-time PEACH_FUNCTION_REGION =', process.env.PEACH_FUNCTION_REGION);
-console.log(
-  'deploy-time FIREBASE_DATABASE_EMULATOR_HOST =',
-  process.env.FIREBASE_DATABASE_EMULATOR_HOST,
-);
-
 import { type App, getApps, initializeApp } from 'firebase-admin/app';
 import { type Database, getDatabase, getDatabaseWithUrl } from 'firebase-admin/database';
 import * as logger from 'firebase-functions/logger';

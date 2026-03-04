@@ -97,8 +97,8 @@ export async function compose(): Promise<{
 
         const webrtc = new SimplePeerEngine();
         const pakeTimeoutMs = 5_000;
-        const rtcTimeoutMs = 20_000;
-        const waitSecondSideMs = 30_000;
+        const rtcTimeoutMs = 30_000;
+        const waitSecondSideMs = 90_000;
 
         return {
           createRoomCore: new CreateRoomUseCase(
