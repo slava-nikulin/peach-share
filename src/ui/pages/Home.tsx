@@ -33,14 +33,15 @@ export const Home: Component = () => {
 
   return (
     <div class="mx-auto grid w-full max-w-[min(92vw,1100px)] grid-cols-1 gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+      <header class="order-0 lg:col-span-2">
+        <h1 class="font-semibold text-lg text-slate-900 tracking-tight sm:text-xl">
+          P2P file sharing via WebRTC
+        </h1>
+      </header>
+
       {/* Main card */}
       <section class="order-1">
         <div class="rounded-2xl border border-white/70 bg-white/70 p-6 shadow-sm backdrop-blur">
-          <h1 class="mb-1 font-semibold text-2xl tracking-tight">Start share</h1>
-          <p class="mb-5 text-gray-600 text-sm">
-            Enter a 6‑digit room code or generate one, then start.
-          </p>
-
           <form
             class="space-y-4"
             onSubmit={async (e: SubmitEvent): Promise<void> => {
@@ -60,8 +61,6 @@ export const Home: Component = () => {
             }}
           >
             <label class="block">
-              <span class="mb-2 block font-medium text-gray-700 text-sm">Room code</span>
-
               {/* Input + buttons group (Flowbite-style) */}
               <div class="flex w-full">
                 <input
@@ -93,7 +92,8 @@ export const Home: Component = () => {
 
                 <button
                   type="button"
-                  class="inline-flex items-center justify-center gap-2 border border-gray-300 border-l-0 bg-white px-3 py-2 text-gray-700 hover:bg-gray-50 focus:z-10 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                  aria-label="Generate random code"
+                  class="inline-flex items-center justify-center gap-2 border border-gray-300 border-l-0 bg-white px-3 py-2 text-gray-700 transition-all duration-150 ease-in-out hover:cursor-pointer hover:bg-gray-50 hover:shadow-md focus:z-10 focus:outline-none focus:ring-2 focus:ring-gray-200 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 disabled:hover:shadow-none"
                   title="Generate random code"
                   onClick={(): void => {
                     setRaw(random6());
@@ -119,7 +119,8 @@ export const Home: Component = () => {
 
                 <button
                   type="button"
-                  class="inline-flex items-center justify-center border border-gray-300 border-l-0 bg-white px-3 py-2 text-gray-700 hover:bg-gray-50 focus:z-10 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                  aria-label="Copy code"
+                  class="inline-flex items-center justify-center border border-gray-300 border-l-0 bg-white px-3 py-2 text-gray-700 transition-all duration-150 ease-in-out hover:cursor-pointer hover:bg-gray-50 hover:shadow-md focus:z-10 focus:outline-none focus:ring-2 focus:ring-gray-200 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 disabled:hover:shadow-none"
                   title="Copy code"
                   onClick={(): void => void copyCode()}
                   disabled={busy() || raw().length !== 6}
@@ -143,29 +144,36 @@ export const Home: Component = () => {
 
                 <button
                   type="button"
-                  class="inline-flex items-center justify-center rounded-r-lg border border-gray-300 border-l-0 bg-white px-3 py-2 text-gray-700 hover:bg-gray-50 focus:z-10 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                  aria-label="Clear code"
+                  class="inline-flex items-center justify-center rounded-r-lg border border-gray-300 border-l-0 bg-white px-3 py-2 text-gray-700 transition-all duration-150 ease-in-out hover:cursor-pointer hover:bg-gray-50 hover:shadow-md focus:z-10 focus:outline-none focus:ring-2 focus:ring-gray-200 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 disabled:hover:shadow-none"
                   title="Clear"
                   onClick={(): void => {
                     setRaw('');
                   }}
                   disabled={busy()}
                 >
-                  <svg viewBox="0 0 20 20" class="h-5 w-5" fill="currentColor" aria-hidden="true">
-                    <path d="M6 6a1 1 0 011.41 0L10 8.59 12.59 6A1 1 0 1114 7.41L11.41 10 14 12.59A1 1 0 1112.59 14L10 11.41 7.41 14A1 1 0 016 12.59L8.59 10 6 7.41A1 1 0 016 6z" />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <title>Clear code</title>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 20L20 4M4 4L20 20" />
                   </svg>
                 </button>
               </div>
 
-              <p class="mt-2 text-gray-500 text-xs">
-                Share the code with your peer. Codes are formatted as{' '}
-                <span class="font-mono">xxx-xxx</span>.
-              </p>
+              <p class="mt-2 text-gray-500 text-xs">Share the code with your peer.</p>
             </label>
 
             <button
               type="submit"
+              aria-label="Start"
               disabled={busy() || raw().length !== 6}
-              class="w-full rounded-lg bg-gradient-to-r from-gray-600 via-gray-700 to-gray-800 px-5 py-2.5 text-center font-medium text-white shadow-sm transition hover:shadow focus:outline-none focus:ring-4 focus:ring-gray-300 disabled:cursor-not-allowed disabled:opacity-60"
+              class="w-full rounded-lg bg-gradient-to-r from-gray-600 via-gray-700 to-gray-800 px-5 py-2.5 text-center font-medium text-white shadow-sm transition-all duration-150 ease-in-out hover:cursor-pointer hover:shadow-md focus:outline-none focus:ring-4 focus:ring-gray-300 active:scale-95 active:from-gray-700 active:via-gray-800 active:to-gray-900 disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100 disabled:active:from-gray-600 disabled:active:via-gray-700 disabled:active:to-gray-800 disabled:hover:shadow-sm"
             >
               {busy() ? 'Checking…' : 'Start'}
             </button>
@@ -178,9 +186,20 @@ export const Home: Component = () => {
         <div class="rounded-2xl border border-white/70 bg-white/60 p-5 shadow-sm">
           <h2 class="mb-2 font-semibold text-gray-900 text-lg">Instructions</h2>
           <ol class="list-inside list-decimal space-y-1 text-gray-600 text-sm">
-            <li>Enter or generate a room code.</li>
-            <li>Press Start and confirm create/join.</li>
-            <li>Share the link/code with the other side.</li>
+            <li>
+              Choose who will create the room first{' '}
+              <span class="font-bold text-gray-900">(initiator)</span>.
+            </li>
+            <li>Generate or enter the same 6-digit room code on both devices.</li>
+            <li>
+              <span class="font-bold text-gray-900">Initiator</span> presses Start and confirms
+              Create.
+            </li>
+            <li>
+              <span class="font-bold text-gray-900">Responder</span> presses Start and confirms Join
+              after room exists.
+            </li>
+            <li>Proceed to file transfer on the next screen.</li>
           </ol>
         </div>
       </section>
@@ -190,8 +209,8 @@ export const Home: Component = () => {
         <div class="fixed inset-0 z-50 flex items-center justify-center">
           <button
             type="button"
-            class="absolute inset-0 bg-gray-900/50"
             aria-label="Close dialog"
+            class="absolute inset-0 bg-gray-900/50"
             onClick={(): void => {
               setModalOpen(false);
               setPendingRoom(null);
@@ -221,6 +240,7 @@ export const Home: Component = () => {
             <div class="flex items-center justify-end gap-2">
               <button
                 type="button"
+                aria-label="Cancel"
                 class="rounded-lg border border-gray-200 bg-white px-4 py-2 font-medium text-gray-900 text-sm hover:bg-gray-50 focus:outline-none focus:ring-4 focus:ring-gray-100"
                 onClick={(): void => {
                   setModalOpen(false);
@@ -231,6 +251,7 @@ export const Home: Component = () => {
               </button>
               <button
                 type="button"
+                aria-label="Confirm"
                 class="rounded-lg bg-gray-900 px-4 py-2 font-medium text-sm text-white hover:bg-gray-800 focus:outline-none focus:ring-4 focus:ring-gray-300"
                 onClick={(): void => {
                   const room = pendingRoom();
