@@ -2,10 +2,7 @@ import { A, type RouteSectionProps, useCurrentMatches } from '@solidjs/router';
 import type { Component, ParentComponent } from 'solid-js';
 import { createMemo, Show, Suspense } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-
-interface RouteInfo {
-  navBar?: Component;
-}
+import type { AppRouteInfo } from '../router/route-info';
 
 export const RootLayout: ParentComponent<RouteSectionProps> = (props: RouteSectionProps) => {
   const matches = useCurrentMatches();
@@ -14,16 +11,17 @@ export const RootLayout: ParentComponent<RouteSectionProps> = (props: RouteSecti
   const NavBar = createMemo<Component | undefined>(() => {
     const ms = matches();
     for (let i = ms.length - 1; i >= 0; i--) {
-      const info = ms[i].route.info as RouteInfo | undefined;
+      const info = ms[i].route.info as AppRouteInfo | undefined;
       if (info?.navBar) return info.navBar;
     }
     return undefined;
   });
 
-  const isRoomRoute = createMemo<boolean>(() => {
+  const shouldHideFooter = createMemo<boolean>(() => {
     const ms = matches();
     for (let i = ms.length - 1; i >= 0; i--) {
-      if (ms[i].route.originalPath === '/room/:id') return true;
+      const info = ms[i].route.info as AppRouteInfo | undefined;
+      if (info?.hideFooter) return true;
     }
     return false;
   });
@@ -52,13 +50,13 @@ export const RootLayout: ParentComponent<RouteSectionProps> = (props: RouteSecti
         <Suspense fallback={null}>{props.children}</Suspense>
       </main>
 
-      <Show when={!isRoomRoute()}>
+      <Show when={!shouldHideFooter()}>
         <footer class="border-white/60 border-t bg-white/40">
           <div class="mx-auto flex w-full max-w-[min(92vw,1400px)] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 text-gray-600 text-xs sm:text-sm">
             <a
               class="hover:text-gray-900 hover:underline"
               href="https://github.com/slava-nikulin/peach-share"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               target="_blank"
             >
               Source
@@ -69,7 +67,7 @@ export const RootLayout: ParentComponent<RouteSectionProps> = (props: RouteSecti
             <a
               class="hover:text-gray-900 hover:underline"
               href="https://www.notion.so/slava-nikulin/Viacheslav-Nikulin-21c9437d889780918de5d418c479dbee"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               target="_blank"
             >
               About me
