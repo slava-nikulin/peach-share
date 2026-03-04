@@ -26,18 +26,36 @@ export const RootLayout: ParentComponent<RouteSectionProps> = (props: RouteSecti
     return false;
   });
 
+  const isHomeRoute = createMemo<boolean>(() => {
+    const ms = matches();
+    const leaf = ms[ms.length - 1];
+    return leaf?.route.originalPath === '/';
+  });
+
   return (
     <div class="flex min-h-screen flex-col bg-gradient-to-br from-rose-50 via-orange-50 to-amber-50 text-slate-800">
       <header class="sticky top-0 z-30 border-white/60 border-b bg-white/70 backdrop-blur">
         <nav class="mx-auto flex w-full max-w-[min(92vw,1400px)] items-center justify-between px-4 py-3">
-          <A href="/" class="group flex items-center gap-3">
-            <span class="h-8 w-8 flex-shrink-0 rounded-2xl border border-orange-300 bg-orange-200 shadow-sm" />
-
+          <div class="group flex items-center gap-3">
+            <A aria-label="Peach Share home" href="/" class="flex flex-shrink-0">
+              <span class="h-8 w-8 rounded-2xl border border-orange-300 bg-orange-200 shadow-sm" />
+            </A>
             <div class="flex flex-col">
-              <span class="font-semibold text-2xl leading-none tracking-tight">Peach Share</span>
+              <Show
+                when={isHomeRoute()}
+                fallback={
+                  <A href="/" class="font-semibold text-2xl leading-none tracking-tight">
+                    Peach Share
+                  </A>
+                }
+              >
+                <h1 class="font-semibold text-2xl leading-none tracking-tight">
+                  <A href="/">Peach Share</A>
+                </h1>
+              </Show>
               <p class="mt-1 hidden text-gray-500 text-xs md:block">P2P file sharing via WebRTC</p>
             </div>
-          </A>
+          </div>
           <div class="flex items-center gap-2">
             <Suspense fallback={null}>
               <Dynamic component={NavBar()} />
