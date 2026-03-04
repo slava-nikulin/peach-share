@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://slava-nikulin.github.io/peach-share/sitemap.xml
