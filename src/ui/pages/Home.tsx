@@ -33,12 +33,6 @@ export const Home: Component = () => {
 
   return (
     <div class="mx-auto grid w-full max-w-[min(92vw,1100px)] grid-cols-1 gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-      <header class="order-0 lg:col-span-2">
-        <h1 class="font-semibold text-lg text-slate-900 tracking-tight sm:text-xl">
-          P2P file sharing via WebRTC
-        </h1>
-      </header>
-
       {/* Main card */}
       <section class="order-1">
         <div class="rounded-2xl border border-white/70 bg-white/70 p-6 shadow-sm backdrop-blur">
