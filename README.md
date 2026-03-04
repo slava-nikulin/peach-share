@@ -153,7 +153,7 @@ export interface P2pChannel {
   close(): void;
   onClose(cb: () => void): () => void;
 }
-````
+```
 
 This keeps the core protocol independent from WebRTC specifics and enables deterministic tests by swapping the transport.
 

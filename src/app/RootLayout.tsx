@@ -55,9 +55,6 @@ export const RootLayout: ParentComponent<RouteSectionProps> = (props: RouteSecti
       <Show when={!isRoomRoute()}>
         <footer class="border-white/60 border-t bg-white/40">
           <div class="mx-auto flex w-full max-w-[min(92vw,1400px)] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 text-gray-600 text-xs sm:text-sm">
-            <a class="hover:text-gray-900 hover:underline" href={`mailto:${contactEmail}`}>
-              Email me
-            </a>
             <a
               class="hover:text-gray-900 hover:underline"
               href="https://github.com/slava-nikulin/peach-share"
@@ -65,6 +62,9 @@ export const RootLayout: ParentComponent<RouteSectionProps> = (props: RouteSecti
               target="_blank"
             >
               Source
+            </a>
+            <a class="hover:text-gray-900 hover:underline" href={`mailto:${contactEmail}`}>
+              Email
             </a>
             <a
               class="hover:text-gray-900 hover:underline"

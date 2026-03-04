@@ -186,10 +186,19 @@ export const Home: Component = () => {
         <div class="rounded-2xl border border-white/70 bg-white/60 p-5 shadow-sm">
           <h2 class="mb-2 font-semibold text-gray-900 text-lg">Instructions</h2>
           <ol class="list-inside list-decimal space-y-1 text-gray-600 text-sm">
-            <li>Choose who will create the room first (initiator).</li>
+            <li>
+              Choose who will create the room first{' '}
+              <span class="font-bold text-gray-900">(initiator)</span>.
+            </li>
             <li>Generate or enter the same 6-digit room code on both devices.</li>
-            <li>Initiator presses Start and confirms Create.</li>
-            <li>The other peer presses Start and confirms Join after room exists.</li>
+            <li>
+              <span class="font-bold text-gray-900">Initiator</span> presses Start and confirms
+              Create.
+            </li>
+            <li>
+              <span class="font-bold text-gray-900">Responder</span> presses Start and confirms Join
+              after room exists.
+            </li>
             <li>Proceed to file transfer on the next screen.</li>
           </ol>
         </div>
