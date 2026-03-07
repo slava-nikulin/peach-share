@@ -3,6 +3,7 @@ import { assertSucceeds } from '@firebase/rules-unit-testing';
 import { type Database, get, ref, set } from 'firebase/database';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { getTestEnv } from '../../../../tests/setup/integration-firebase';
+import { RtdbRoomRepository } from '../../rtdb-room-repository';
 
 type RulesDisabledContext = RulesTestContext;
 interface RoomDoc {
@@ -106,7 +107,7 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((r) => setTimeout(r, ms));
 }
 
-describe('Cloud Functions integration: registerCreator/registerResponder/deleteRoomOnFinalized', () => {
+describe('Cloud Functions integration: registerCreator/registerResponder/deleteRoomOnDeletionRequested', () => {
   let env: RulesTestEnvironment;
 
   beforeEach(async () => {
@@ -324,7 +325,7 @@ describe('Cloud Functions integration: registerCreator/registerResponder/deleteR
     expect(room?.meta?.state).toBe(1);
   });
 
-  it('deleteRoomOnFinalized: when participant sets meta/state=3 (rules satisfied), room is removed', async () => {
+  it('deleteRoomOnDeletionRequested: when participant sets meta/deleteRequested (rules satisfied), room is removed', async () => {
     const creator = mkUid('creator');
     const responder = mkUid('responder');
     const roomId = mkRoomId();
@@ -343,7 +344,7 @@ describe('Cloud Functions integration: registerCreator/registerResponder/deleteR
     );
     await waitRoomStateAdmin(env, roomId, 2);
 
-    // 2) seed required messages as admin (чтобы правила разрешили state=3)
+    // 2) seed required messages as admin (чтобы правила разрешили deleteRequested)
     await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
       const adminDb = ctx.database() as unknown as Database;
       await set(ref(adminDb, `/rooms/${roomId}/messages`), {
@@ -352,10 +353,43 @@ describe('Cloud Functions integration: registerCreator/registerResponder/deleteR
       });
     });
 
-    // 3) participant writes state=3 (rules allow)
-    await assertSucceeds(set(ref(creatorDb, `/rooms/${roomId}/meta/state`), 3));
+    // 3) participant writes deleteRequested once (rules allow)
+    await assertSucceeds(set(ref(creatorDb, `/rooms/${roomId}/meta/deleteRequested`), true));
 
     // 4) function should delete room
+    await waitRoomDeletedAdmin(env, roomId, 25_000);
+  });
+
+  it('finalize() does not suppress deletion request when meta/state is unexpected', async () => {
+    const creator = mkUid('creator');
+    const responder = mkUid('responder');
+    const roomId = mkRoomId();
+
+    const creatorDb = env.authenticatedContext(creator).database() as unknown as Database;
+    const responderDb = env.authenticatedContext(responder).database() as unknown as Database;
+
+    await assertSucceeds(
+      set(ref(creatorDb, `/${creator}/create`), { room_id: roomId, created_at: nowMs() }),
+    );
+    await waitRoomStateAdmin(env, roomId, 1);
+
+    await assertSucceeds(
+      set(ref(responderDb, `/${responder}/join`), { room_id: roomId, created_at: nowMs() }),
+    );
+    await waitRoomStateAdmin(env, roomId, 2);
+
+    await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
+      const adminDb = ctx.database() as unknown as Database;
+      await set(ref(adminDb, `/rooms/${roomId}/messages`), {
+        creator: { pake: { msg: 'a', mac_tag: 'b' }, rtc: { msg: 'c' } },
+        responder: { pake: { msg: 'd', mac_tag: 'e' }, rtc: { msg: 'f' } },
+      });
+      await set(ref(adminDb, `/rooms/${roomId}/meta/state`), 99);
+    });
+
+    const repo = new RtdbRoomRepository(creatorDb);
+    await repo.finalize(roomId);
+
     await waitRoomDeletedAdmin(env, roomId, 25_000);
   });
 });

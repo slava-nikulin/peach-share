@@ -8,6 +8,11 @@ on:
         type: boolean
         required: true
         default: false
+      deploy_database_rules:
+        description: 'Deploy Firebase Realtime Database Rules'
+        type: boolean
+        required: true
+        default: false
       deploy_pages:
         description: 'Deploy GitHub Pages'
         type: boolean
@@ -83,6 +88,37 @@ jobs:
         env:
           PEACH_FUNCTION_REGION: ${{ vars.PEACH_FUNCTION_REGION }}
         run: firebase deploy --only functions --project ${{ vars.FIREBASE_PROJECT_ID }}
+
+  deploy_database_rules:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_database_rules }}
+    needs: build_test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - id: auth
+        name: Auth to Google Cloud (WIF)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - run: pnpm i --frozen-lockfile
+      - run: pnpm i -g firebase-tools
+
+      - name: Deploy RTDB rules
+        run: firebase deploy --only database --project ${{ vars.FIREBASE_PROJECT_ID }}
 
   deploy_pages:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_pages }}

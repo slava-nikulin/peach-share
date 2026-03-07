@@ -13,23 +13,23 @@ describe('InitRoomUseCase (unit)', () => {
   let kdf: RoomIdKdfPort;
   let otpClient: OtpClientPort;
 
-  let roomExists: ReturnType<typeof vi.fn<InitRoomRepositoryPort['roomExists']>>;
+  let isRoomJoinable: ReturnType<typeof vi.fn<InitRoomRepositoryPort['isRoomJoinable']>>;
   let deriveRoomId: ReturnType<typeof vi.fn<RoomIdKdfPort['deriveRoomId']>>;
   let currentRound: ReturnType<typeof vi.fn<OtpClientPort['currentRound']>>;
   let getOtp: ReturnType<typeof vi.fn<OtpClientPort['getOtp']>>;
 
   beforeEach(() => {
-    roomExists = vi.fn<InitRoomRepositoryPort['roomExists']>();
+    isRoomJoinable = vi.fn<InitRoomRepositoryPort['isRoomJoinable']>();
     deriveRoomId = vi.fn<RoomIdKdfPort['deriveRoomId']>();
     currentRound = vi.fn<OtpClientPort['currentRound']>();
     getOtp = vi.fn<OtpClientPort['getOtp']>();
 
-    roomsRepo = { roomExists };
+    roomsRepo = { isRoomJoinable };
     kdf = { deriveRoomId };
     otpClient = { currentRound, getOtp };
   });
 
-  it('join: если current-roomId существует — возвращает join и не проверяет предыдущие roomId', async () => {
+  it('join: если current-roomId joinable — возвращает join и не проверяет предыдущие roomId', async () => {
     currentRound.mockReturnValue(3);
 
     const otp3 = new Uint8Array([3]);
@@ -55,7 +55,7 @@ describe('InitRoomUseCase (unit)', () => {
     });
 
     const id0 = idFromBytes(out3);
-    roomExists.mockResolvedValue(true);
+    isRoomJoinable.mockResolvedValue(true);
 
     const uc = new InitRoomUseCase(roomsRepo, kdf, otpClient);
     const res = await uc.run(prs);
@@ -69,15 +69,15 @@ describe('InitRoomUseCase (unit)', () => {
     expect(getOtp).toHaveBeenNthCalledWith(2, 2);
     expect(getOtp).toHaveBeenNthCalledWith(3, 1);
 
-    // derive/exists только для current (ранний выход)
+    // derive/isRoomJoinable только для current (ранний выход)
     expect(deriveRoomId).toHaveBeenCalledTimes(1);
     expect(deriveRoomId).toHaveBeenCalledWith(prs, otp3);
 
-    expect(roomExists).toHaveBeenCalledTimes(1);
-    expect(roomExists).toHaveBeenCalledWith(id0);
+    expect(isRoomJoinable).toHaveBeenCalledTimes(1);
+    expect(isRoomJoinable).toHaveBeenCalledWith(id0);
   });
 
-  it('join: current не существует, previous существует — возвращает join(previous) и останавливается', async () => {
+  it('join: current не joinable, previous joinable — возвращает join(previous) и останавливается', async () => {
     currentRound.mockReturnValue(3);
 
     const otp3 = new Uint8Array([3]);
@@ -105,7 +105,7 @@ describe('InitRoomUseCase (unit)', () => {
     const id0 = idFromBytes(out3);
     const id1 = idFromBytes(out2);
 
-    roomExists.mockImplementation(async (id) => id === id1);
+    isRoomJoinable.mockImplementation(async (id) => id === id1);
 
     const uc = new InitRoomUseCase(roomsRepo, kdf, otpClient);
     const res = await uc.run(prs);
@@ -113,13 +113,13 @@ describe('InitRoomUseCase (unit)', () => {
     expect(res).toEqual({ intent: 'join', roomId: id1 });
 
     expect(deriveRoomId).toHaveBeenCalledTimes(2);
-    expect(roomExists).toHaveBeenCalledTimes(2);
+    expect(isRoomJoinable).toHaveBeenCalledTimes(2);
 
     // порядок проверок: current → previous → stop
-    expect(roomExists.mock.calls.map((c) => c[0])).toEqual([id0, id1]);
+    expect(isRoomJoinable.mock.calls.map((c) => c[0])).toEqual([id0, id1]);
   });
 
-  it('join: current и previous не существуют, but current-2 существует — возвращает join(current-2)', async () => {
+  it('join: current и previous не joinable, but current-2 joinable — возвращает join(current-2)', async () => {
     currentRound.mockReturnValue(3);
 
     const otp3 = new Uint8Array([3]);
@@ -148,7 +148,7 @@ describe('InitRoomUseCase (unit)', () => {
     const id1 = idFromBytes(out2);
     const id2 = idFromBytes(out1);
 
-    roomExists.mockImplementation(async (id) => id === id2);
+    isRoomJoinable.mockImplementation(async (id) => id === id2);
 
     const uc = new InitRoomUseCase(roomsRepo, kdf, otpClient);
     const res = await uc.run(prs);
@@ -156,11 +156,11 @@ describe('InitRoomUseCase (unit)', () => {
     expect(res).toEqual({ intent: 'join', roomId: id2 });
 
     expect(deriveRoomId).toHaveBeenCalledTimes(3);
-    expect(roomExists).toHaveBeenCalledTimes(3);
-    expect(roomExists.mock.calls.map((c) => c[0])).toEqual([id0, id1, id2]);
+    expect(isRoomJoinable).toHaveBeenCalledTimes(3);
+    expect(isRoomJoinable.mock.calls.map((c) => c[0])).toEqual([id0, id1, id2]);
   });
 
-  it('create: если ни один roomId не существует — возвращает create с roomId=current', async () => {
+  it('create: если ни один roomId не joinable — возвращает create с roomId=current', async () => {
     currentRound.mockReturnValue(3);
 
     const otp3 = new Uint8Array([3]);
@@ -185,7 +185,7 @@ describe('InitRoomUseCase (unit)', () => {
       throw new Error('unexpected salt');
     });
 
-    roomExists.mockResolvedValue(false);
+    isRoomJoinable.mockResolvedValue(false);
 
     const id0 = idFromBytes(out3);
     const id1 = idFromBytes(out2);
@@ -197,11 +197,11 @@ describe('InitRoomUseCase (unit)', () => {
     expect(res).toEqual({ intent: 'create', roomId: id0 });
 
     expect(deriveRoomId).toHaveBeenCalledTimes(3);
-    expect(roomExists).toHaveBeenCalledTimes(3);
-    expect(roomExists.mock.calls.map((c) => c[0])).toEqual([id0, id1, id2]);
+    expect(isRoomJoinable).toHaveBeenCalledTimes(3);
+    expect(isRoomJoinable.mock.calls.map((c) => c[0])).toEqual([id0, id1, id2]);
   });
 
-  it('currentRound=1: rounds=[1] — если room не существует, вернёт create', async () => {
+  it('currentRound=1: rounds=[1] — если room не joinable, вернёт create', async () => {
     currentRound.mockReturnValue(1);
 
     const otp1 = new Uint8Array([1]);
@@ -211,7 +211,7 @@ describe('InitRoomUseCase (unit)', () => {
     deriveRoomId.mockResolvedValue(out1);
 
     const id0 = idFromBytes(out1);
-    roomExists.mockResolvedValue(false);
+    isRoomJoinable.mockResolvedValue(false);
 
     const uc = new InitRoomUseCase(roomsRepo, kdf, otpClient);
     const res = await uc.run(prs);
@@ -221,7 +221,7 @@ describe('InitRoomUseCase (unit)', () => {
     expect(getOtp).toHaveBeenCalledTimes(1);
     expect(getOtp).toHaveBeenCalledWith(1);
     expect(deriveRoomId).toHaveBeenCalledTimes(1);
-    expect(roomExists).toHaveBeenCalledTimes(1);
+    expect(isRoomJoinable).toHaveBeenCalledTimes(1);
   });
 
   it('currentRound=2: rounds=[2,1] (0 отфильтровывается) — проверка корректных аргументов getOtp', async () => {
@@ -246,7 +246,7 @@ describe('InitRoomUseCase (unit)', () => {
 
     const id1 = idFromBytes(out1);
 
-    roomExists.mockImplementation(async (id) => id === id1);
+    isRoomJoinable.mockImplementation(async (id) => id === id1);
 
     const uc = new InitRoomUseCase(roomsRepo, kdf, otpClient);
     const res = await uc.run(prs);
@@ -258,7 +258,7 @@ describe('InitRoomUseCase (unit)', () => {
     expect(getOtp).toHaveBeenNthCalledWith(2, 1);
   });
 
-  it('ошибка: getOtp reject в любом из раундов → use-case reject, derive/exists не вызываются', async () => {
+  it('ошибка: getOtp reject в любом из раундов → use-case reject, derive/isRoomJoinable не вызываются', async () => {
     currentRound.mockReturnValue(3);
 
     const otp3 = new Uint8Array([3]);
@@ -278,10 +278,10 @@ describe('InitRoomUseCase (unit)', () => {
 
     expect(getOtp).toHaveBeenCalledTimes(3);
     expect(deriveRoomId).not.toHaveBeenCalled();
-    expect(roomExists).not.toHaveBeenCalled();
+    expect(isRoomJoinable).not.toHaveBeenCalled();
   });
 
-  it('ошибка: deriveRoomId reject на current → use-case reject, roomExists не вызывается', async () => {
+  it('ошибка: deriveRoomId reject на current → use-case reject, isRoomJoinable не вызывается', async () => {
     currentRound.mockReturnValue(1);
 
     const otp1 = new Uint8Array([1]);
@@ -294,10 +294,10 @@ describe('InitRoomUseCase (unit)', () => {
 
     await expect(uc.run(prs)).rejects.toBe(err);
 
-    expect(roomExists).not.toHaveBeenCalled();
+    expect(isRoomJoinable).not.toHaveBeenCalled();
   });
 
-  it('ошибка: roomExists reject на current → use-case reject, прошлые раунды не проверяются', async () => {
+  it('ошибка: isRoomJoinable reject на current → use-case reject, прошлые раунды не проверяются', async () => {
     currentRound.mockReturnValue(3);
 
     const otp3 = new Uint8Array([3]);
@@ -323,7 +323,7 @@ describe('InitRoomUseCase (unit)', () => {
     });
 
     const err = new Error('repo failed');
-    roomExists.mockRejectedValue(err);
+    isRoomJoinable.mockRejectedValue(err);
 
     const uc = new InitRoomUseCase(roomsRepo, kdf, otpClient);
 
@@ -331,10 +331,10 @@ describe('InitRoomUseCase (unit)', () => {
 
     // только current успел
     expect(deriveRoomId).toHaveBeenCalledTimes(1);
-    expect(roomExists).toHaveBeenCalledTimes(1);
+    expect(isRoomJoinable).toHaveBeenCalledTimes(1);
   });
 
-  it('ошибка: deriveRoomId reject на previous (после того как current not exists) → use-case reject', async () => {
+  it('ошибка: deriveRoomId reject на previous (после того как current not joinable) → use-case reject', async () => {
     currentRound.mockReturnValue(2);
 
     const otp2 = new Uint8Array([2]);
@@ -355,14 +355,14 @@ describe('InitRoomUseCase (unit)', () => {
       throw new Error('unexpected salt');
     });
 
-    roomExists.mockResolvedValue(false); // current not exists
+    isRoomJoinable.mockResolvedValue(false); // current not joinable
 
     const uc = new InitRoomUseCase(roomsRepo, kdf, otpClient);
 
     await expect(uc.run(prs)).rejects.toBe(err);
 
-    // roomExists был вызван только для current
-    expect(roomExists).toHaveBeenCalledTimes(1);
+    // isRoomJoinable был вызван только для current-roomId
+    expect(isRoomJoinable).toHaveBeenCalledTimes(1);
   });
 
   it('edge-case: currentRound=0 → rounds=[], текущая реализация падает TypeError', async () => {
@@ -374,6 +374,6 @@ describe('InitRoomUseCase (unit)', () => {
 
     expect(getOtp).not.toHaveBeenCalled();
     expect(deriveRoomId).not.toHaveBeenCalled();
-    expect(roomExists).not.toHaveBeenCalled();
+    expect(isRoomJoinable).not.toHaveBeenCalled();
   });
 });

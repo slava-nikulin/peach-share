@@ -47,8 +47,11 @@
           ".read": "auth != null",
           ".write": false,
           "state": {
-            ".validate": "newData.isNumber() && (newData.val() == 1 || newData.val() == 2 || newData.val() == 3)",
-            ".write": "auth != null && data.exists() && newData.isNumber() && newData.val() == 3 && (auth.uid == root.child('rooms').child($roomId).child('private').child('creator_uid').val() || auth.uid == root.child('rooms').child($roomId).child('private').child('responder_uid').val()) && root.child('rooms').child($roomId).child('messages').child('creator').child('pake').child('msg').exists() && root.child('rooms').child($roomId).child('messages').child('creator').child('pake').child('mac_tag').exists() && root.child('rooms').child($roomId).child('messages').child('creator').child('rtc').child('msg').exists() && root.child('rooms').child($roomId).child('messages').child('responder').child('pake').child('msg').exists() && root.child('rooms').child($roomId).child('messages').child('responder').child('pake').child('mac_tag').exists() && root.child('rooms').child($roomId).child('messages').child('responder').child('rtc').child('msg').exists()"
+            ".validate": "newData.isNumber() && (newData.val() == 1 || newData.val() == 2)"
+          },
+          "deleteRequested": {
+            ".validate": "newData.isBoolean() && newData.val() == true",
+            ".write": "auth != null && !data.exists() && newData.val() == true && (auth.uid == root.child('rooms').child($roomId).child('private').child('creator_uid').val() || auth.uid == root.child('rooms').child($roomId).child('private').child('responder_uid').val()) && root.child('rooms').child($roomId).child('messages').child('creator').child('pake').child('msg').exists() && root.child('rooms').child($roomId).child('messages').child('creator').child('pake').child('mac_tag').exists() && root.child('rooms').child($roomId).child('messages').child('creator').child('rtc').child('msg').exists() && root.child('rooms').child($roomId).child('messages').child('responder').child('pake').child('msg').exists() && root.child('rooms').child($roomId).child('messages').child('responder').child('pake').child('mac_tag').exists() && root.child('rooms').child($roomId).child('messages').child('responder').child('rtc').child('msg').exists()"
           },
           "$other": {
             ".validate": false

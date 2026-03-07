@@ -71,8 +71,8 @@ sequenceDiagram
 
   A-->>B: P2P DataChannel connected
 
-  A->>DB: write /rooms/{roomId}/meta/state = 3 (finalize)
-  DB-->>FN: trigger deleteRoomOnFinalized
+  A->>DB: write /rooms/{roomId}/meta/deleteRequested = true (finalize request)
+  DB-->>FN: trigger deleteRoomOnDeletionRequested
   FN->>DB: remove /rooms/{roomId}
 ```
 
@@ -125,12 +125,12 @@ RTDB rules are **deny-by-default** and enforce strict roles and sequencing:
   - only `creator_uid` or `responder_uid` can read room messages under `/rooms/{roomId}/messages/**`
   - protocol fields are **role-partitioned**: the creator writes only `/messages/creator/**`, the responder writes only `/messages/responder/**`
   - messages are **write-once** (append-only semantics per field; no overwrites)
-- Finalization: `meta.state = 3` is allowed only after all required protocol messages exist; a trigger then **deletes the room**.
+- Finalization: `meta.deleteRequested = true` is a write-once participant signal allowed only after all required protocol messages exist; a trigger then **deletes the room**.
 
 ### Security properties (what this design gives you)
 - Confidentiality/integrity of WebRTC offer/answer in RTDB (AEAD under keys derived from ISK)
 - Strong resistance to room enumeration via time-rotating drand salt + memory-hard Argon2id KDF
-- Reduced online guessing/DDoS via slot rate limiting + ephemeral rooms (deleted on finalize)
+- Reduced online guessing/DDoS via slot rate limiting + ephemeral rooms (deleted on finalize request)
 - Only registered participants can read room messages; non-members can’t observe transcripts
 
 ### Limitations

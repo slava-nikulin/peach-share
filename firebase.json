@@ -7,5 +7,8 @@
       "predeploy": ["pnpm --dir \"$RESOURCE_DIR\" run build"],
       "source": "functions"
     }
-  ]
+  ],
+  "database": {
+    "rules": "docker/config/firebase/database.rules.json"
+  }
 }

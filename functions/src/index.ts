@@ -1,7 +1,7 @@
 import { type App, getApps, initializeApp } from 'firebase-admin/app';
 import { type Database, getDatabase, getDatabaseWithUrl } from 'firebase-admin/database';
 import * as logger from 'firebase-functions/logger';
-import { onValueWritten } from 'firebase-functions/v2/database';
+import { onValueCreated, onValueWritten } from 'firebase-functions/v2/database';
 import { onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 
@@ -147,29 +147,21 @@ export const registerResponder: ReturnType<typeof onValueWritten> = onValueWritt
   },
 );
 
-export const deleteRoomOnFinalized: ReturnType<typeof onValueWritten> = onValueWritten(
-  { ref: '/rooms/{roomId}/meta/state', region: REGION },
+export const deleteRoomOnDeletionRequested: ReturnType<typeof onValueCreated> = onValueCreated(
+  { ref: '/rooms/{roomId}/meta/deleteRequested', region: REGION },
   async (event) => {
     const { roomId } = event.params;
-
-    const beforeVal = event.data.before.val();
-    const afterVal = event.data.after.val();
-
-    const after = Number(afterVal);
-    if (!Number.isFinite(after) || after !== 3) return;
-
-    const before = Number(beforeVal);
-    if (Number.isFinite(before) && before === 3) return; // already finalized (idempotency)
+    if (event.data.val() !== true) return;
 
     const roomRef = db.ref(`/rooms/${roomId}`);
 
     try {
       await roomRef.remove();
 
-      logger.info('Room deleted on finalized state', { roomId });
+      logger.info('Room deleted on deletion request', { roomId });
     } catch (e) {
       // ретраи допустимы; remove() идемпотентен
-      logger.error('Failed to delete room on finalized state', { roomId, err: String(e) });
+      logger.error('Failed to delete room on deletion request', { roomId, err: String(e) });
       throw e;
     }
   },
