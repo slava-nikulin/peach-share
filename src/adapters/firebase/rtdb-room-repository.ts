@@ -1,5 +1,5 @@
 import type { Database, DataSnapshot, Unsubscribe } from 'firebase/database';
-import { get, onValue, ref, set } from 'firebase/database';
+import { get, onValue, ref, runTransaction, set } from 'firebase/database';
 import type { RoomRepositoryPort } from '../../bll/ports/room-repository';
 
 export class RoomWaitTimeoutError extends Error {
@@ -49,7 +49,9 @@ type SlotKind = 'create' | 'join';
 type PakeField = 'msg' | 'mac_tag';
 
 const PATH = {
+  meta: (roomId: string) => `rooms/${roomId}/meta`,
   metaState: (roomId: string) => `rooms/${roomId}/meta/state`,
+  metaDeleteRequested: (roomId: string) => `rooms/${roomId}/meta/deleteRequested`,
   messagesRoot: (roomId: string) => `rooms/${roomId}/messages`,
 
   slot: (uid: string, kind: SlotKind) => `${uid}/${kind}`,
@@ -143,17 +145,33 @@ export class RtdbRoomRepository implements RoomRepositoryPort {
     return ref(this.db, path);
   }
 
+  private async readRoomMeta(
+    roomId: string,
+  ): Promise<{ state: number | undefined; deleteRequested: boolean }> {
+    const snap = await get(this.r(PATH.meta(roomId)));
+    if (!snap.exists()) return { state: undefined, deleteRequested: false };
+
+    const value = snap.val();
+    if (typeof value !== 'object' || value === null) {
+      return { state: undefined, deleteRequested: false };
+    }
+
+    const meta = value as Record<string, unknown>;
+    const stateRaw = meta.state;
+    const state = typeof stateRaw === 'number' && Number.isFinite(stateRaw) ? stateRaw : undefined;
+    const deleteRequested = meta.deleteRequested === true;
+
+    return { state, deleteRequested };
+  }
+
   private async probeReadable(path: string): Promise<void> {
     // Важно именно отсутствие PERMISSION_DENIED, существование узла не важно
     await get(this.r(path));
   }
 
   private async readMetaState(roomId: string): Promise<number | undefined> {
-    const snap = await get(this.r(PATH.metaState(roomId)));
-    if (!snap.exists()) return undefined;
-
-    const n = Number(snap.val());
-    return Number.isFinite(n) ? n : undefined;
+    const { state } = await this.readRoomMeta(roomId);
+    return state;
   }
 
   private waitMetaStateAtLeast(roomId: string, min: number, timeoutMs: number): Promise<number> {
@@ -274,10 +292,11 @@ export class RtdbRoomRepository implements RoomRepositoryPort {
   // ---- RoomRepositoryPort ----
 
   async roomExists(roomId: string): Promise<boolean> {
-    const s = await this.readMetaState(roomId);
-    // joinable: 1 (есть creator) или 2 (есть responder)
-    // state=3 (finalized) считаем НЕ joinable
-    return s !== undefined && s >= 1 && s < 3;
+    const meta = await this.readRoomMeta(roomId);
+    if (meta.deleteRequested) return false;
+
+    // Явно отражаем доменную модель joinable-state.
+    return meta.state === 1 || meta.state === 2;
   }
 
   async roomJoin(uid: string, roomId: string, timeoutMs: number): Promise<void> {
@@ -289,9 +308,20 @@ export class RtdbRoomRepository implements RoomRepositoryPort {
   }
 
   async finalize(roomId: string): Promise<void> {
+    const meta = await this.readRoomMeta(roomId);
+    if (meta.deleteRequested) return;
+    if (meta.state !== 1 && meta.state !== 2) return;
+
     // best-effort: может быть PERMISSION_DENIED, если правила запрещают
     try {
-      await set(this.r(PATH.metaState(roomId)), 3);
+      await runTransaction(
+        this.r(PATH.metaDeleteRequested(roomId)),
+        (current) => {
+          if (current !== null) return;
+          return true;
+        },
+        { applyLocally: false },
+      );
     } catch (e) {
       if (!isPermissionDenied(e)) throw e;
     }

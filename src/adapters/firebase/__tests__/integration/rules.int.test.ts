@@ -1,5 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { RulesTestContext, RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
+import {
+  assertFails,
+  assertSucceeds,
+  initializeTestEnvironment,
+} from '@firebase/rules-unit-testing';
 import { type Database, get, ref, remove, set, setWithPriority } from 'firebase/database';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { getTestEnv } from '../../../../tests/setup/integration-firebase';
@@ -18,6 +24,20 @@ const mkRoomId = (): string => `room_${Math.random().toString(16).slice(2, 18)}`
  * - "слишком будущий" => now + 3000 (FAIL)
  */
 const nowMs = (): number => Date.now();
+
+async function createIsolatedRulesEnv(projectId: string): Promise<RulesTestEnvironment> {
+  const rulesPath = resolve(process.cwd(), 'docker/config/firebase/database.rules.json');
+  const rules = readFileSync(rulesPath, 'utf8');
+
+  return await initializeTestEnvironment({
+    projectId,
+    database: {
+      host: '127.0.0.1',
+      port: 9000,
+      rules,
+    },
+  });
+}
 
 async function adminSet(env: RulesDisabledEnv, path: string, value: unknown): Promise<void> {
   await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
@@ -84,7 +104,7 @@ async function seedResponderJoined(
 }
 
 async function seedAllMessagesPresent(env: RulesDisabledEnv, roomId: string): Promise<void> {
-  // Все 6 обязательных сообщений должны существовать, иначе state=3 запрещён rules.
+  // Все 6 обязательных сообщений должны существовать, иначе deleteRequested запрещён rules.
   await adminSet(env, `/rooms/${roomId}/messages`, {
     creator: {
       pake: { msg: 'a', mac_tag: 'b' },
@@ -261,7 +281,7 @@ describe('RTDB security rules: user slots /{uid}/{create|join}', () => {
   });
 });
 
-describe('RTDB security rules: /rooms/{roomId} messages and finalize', () => {
+describe('RTDB security rules: /rooms/{roomId} messages and deletion request', () => {
   let env: RulesDisabledEnv;
 
   beforeEach(async () => {
@@ -417,7 +437,7 @@ describe('RTDB security rules: /rooms/{roomId} messages and finalize', () => {
     await assertFails(get(ref(outsiderDb, `/rooms/${roomId}/messages`)));
   });
 
-  it('meta/state write: cannot set 1 or 2 from client', async () => {
+  it('meta/state write: clients cannot set 1, 2 or 3', async () => {
     const roomId = mkRoomId();
     const creator = mkUid('creator');
     await seedRoomBase(env, roomId, creator);
@@ -426,9 +446,10 @@ describe('RTDB security rules: /rooms/{roomId} messages and finalize', () => {
 
     await assertFails(set(ref(db, `/rooms/${roomId}/meta/state`), 1));
     await assertFails(set(ref(db, `/rooms/${roomId}/meta/state`), 2));
+    await assertFails(set(ref(db, `/rooms/${roomId}/meta/state`), 3));
   });
 
-  it('meta/state finalize: cannot set 3 until all required messages exist', async () => {
+  it('meta/deleteRequested: cannot set until all required messages exist', async () => {
     const roomId = mkRoomId();
     const creator = mkUid('creator');
     const responder = mkUid('responder');
@@ -438,16 +459,16 @@ describe('RTDB security rules: /rooms/{roomId} messages and finalize', () => {
     const creatorDb = env.authenticatedContext(creator).database() as unknown as Database;
 
     // no messages yet => deny
-    await assertFails(set(ref(creatorDb, `/rooms/${roomId}/meta/state`), 3));
+    await assertFails(set(ref(creatorDb, `/rooms/${roomId}/meta/deleteRequested`), true));
 
     // partial messages => still deny
     await adminSet(env, `/rooms/${roomId}/messages/creator/pake/msg`, 'a');
     await adminSet(env, `/rooms/${roomId}/messages/creator/pake/mac_tag`, 'b');
     await adminSet(env, `/rooms/${roomId}/messages/creator/rtc/msg`, 'c');
-    await assertFails(set(ref(creatorDb, `/rooms/${roomId}/meta/state`), 3));
+    await assertFails(set(ref(creatorDb, `/rooms/${roomId}/meta/deleteRequested`), true));
   });
 
-  it('meta/state finalize: participants can set 3 only when all messages exist; outsider cannot', async () => {
+  it('meta/deleteRequested: participant can set when all messages exist; outsider cannot', async () => {
     const roomId = mkRoomId();
     const creator = mkUid('creator');
     const responder = mkUid('responder');
@@ -458,15 +479,55 @@ describe('RTDB security rules: /rooms/{roomId} messages and finalize', () => {
     await seedAllMessagesPresent(env, roomId);
 
     const creatorDb = env.authenticatedContext(creator).database() as unknown as Database;
-    const responderDb = env.authenticatedContext(responder).database() as unknown as Database;
     const outsiderDb = env.authenticatedContext(outsider).database() as unknown as Database;
 
-    await assertFails(set(ref(outsiderDb, `/rooms/${roomId}/meta/state`), 3));
-    await assertSucceeds(set(ref(creatorDb, `/rooms/${roomId}/meta/state`), 3));
+    await assertFails(set(ref(outsiderDb, `/rooms/${roomId}/meta/deleteRequested`), true));
+    await assertSucceeds(set(ref(creatorDb, `/rooms/${roomId}/meta/deleteRequested`), true));
+  });
 
-    // (опционально) второй участник тоже должен иметь право, если room ещё существует
-    // В этом тесте после state=3 функции могут удалить room (если emulator функций поднят),
-    // поэтому не делаем второй set здесь, чтобы избежать гонок.
-    await assertSucceeds(get(ref(responderDb, `/rooms/${roomId}/meta/state`)));
+  it('meta/deleteRequested: responder can also request deletion first', async () => {
+    const roomId = mkRoomId();
+    const creator = mkUid('creator');
+    const responder = mkUid('responder');
+
+    await seedRoomBase(env, roomId, creator);
+    await seedResponderJoined(env, roomId, responder);
+    await seedAllMessagesPresent(env, roomId);
+
+    const responderDb = env.authenticatedContext(responder).database() as unknown as Database;
+    await assertSucceeds(set(ref(responderDb, `/rooms/${roomId}/meta/deleteRequested`), true));
+  });
+});
+
+describe('RTDB security rules: deleteRequested create-once semantics (isolated namespace)', () => {
+  it('enforces one-shot writes without relying on function deletion timing', async () => {
+    const isolatedEnv = await createIsolatedRulesEnv(
+      `demo-peach-share-rules-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
+    );
+
+    try {
+      await isolatedEnv.clearDatabase();
+
+      const roomId = mkRoomId();
+      const creator = mkUid('creator');
+      const responder = mkUid('responder');
+
+      await seedRoomBase(isolatedEnv, roomId, creator);
+      await seedResponderJoined(isolatedEnv, roomId, responder);
+      await seedAllMessagesPresent(isolatedEnv, roomId);
+
+      const creatorDb = isolatedEnv.authenticatedContext(creator).database() as unknown as Database;
+      const responderDb = isolatedEnv.authenticatedContext(responder).database() as unknown as Database;
+
+      await assertSucceeds(set(ref(creatorDb, `/rooms/${roomId}/meta/deleteRequested`), true));
+
+      expect(await adminGet(isolatedEnv, `/rooms/${roomId}/meta/deleteRequested`)).toBe(true);
+      expect(await adminGet(isolatedEnv, `/rooms/${roomId}`)).toBeTruthy();
+
+      await assertFails(set(ref(creatorDb, `/rooms/${roomId}/meta/deleteRequested`), true));
+      await assertFails(set(ref(responderDb, `/rooms/${roomId}/meta/deleteRequested`), true));
+    } finally {
+      await isolatedEnv.cleanup();
+    }
   });
 });

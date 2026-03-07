@@ -176,7 +176,7 @@ describe('rooms handshake integration (happy path)', () => {
     return uint8ArrayToBase64(randomBytes(16), { urlSafe: true });
   };
 
-  it('Create + Join succeed; runners bring db online during run and offline after; room deleted after finalize', async () => {
+  it('Create + Join succeed; runners bring db online during run and offline after; room deleted after deletion request', async () => {
     const env = getTestEnv();
 
     const ownerUid = mkUid('owner');
@@ -252,7 +252,7 @@ describe('rooms handshake integration (happy path)', () => {
     await waitInfoConnected(ownerDb, false);
     await waitInfoConnected(responderDb, false);
 
-    // 5) комната должна быть удалена функцией deleteRoomOnFinalized (после state=3)
+    // 5) комната должна быть удалена функцией deleteRoomOnDeletionRequested (после meta/deleteRequested)
     await waitRoomDeletedAdmin(env, roomId, 25_000);
 
     // 6) проверяем канал

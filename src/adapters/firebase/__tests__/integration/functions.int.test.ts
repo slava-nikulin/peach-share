@@ -106,7 +106,7 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((r) => setTimeout(r, ms));
 }
 
-describe('Cloud Functions integration: registerCreator/registerResponder/deleteRoomOnFinalized', () => {
+describe('Cloud Functions integration: registerCreator/registerResponder/deleteRoomOnDeletionRequested', () => {
   let env: RulesTestEnvironment;
 
   beforeEach(async () => {
@@ -324,7 +324,7 @@ describe('Cloud Functions integration: registerCreator/registerResponder/deleteR
     expect(room?.meta?.state).toBe(1);
   });
 
-  it('deleteRoomOnFinalized: when participant sets meta/state=3 (rules satisfied), room is removed', async () => {
+  it('deleteRoomOnDeletionRequested: when participant sets meta/deleteRequested (rules satisfied), room is removed', async () => {
     const creator = mkUid('creator');
     const responder = mkUid('responder');
     const roomId = mkRoomId();
@@ -343,7 +343,7 @@ describe('Cloud Functions integration: registerCreator/registerResponder/deleteR
     );
     await waitRoomStateAdmin(env, roomId, 2);
 
-    // 2) seed required messages as admin (чтобы правила разрешили state=3)
+    // 2) seed required messages as admin (чтобы правила разрешили deleteRequested)
     await env.withSecurityRulesDisabled(async (ctx: RulesDisabledContext) => {
       const adminDb = ctx.database() as unknown as Database;
       await set(ref(adminDb, `/rooms/${roomId}/messages`), {
@@ -352,8 +352,8 @@ describe('Cloud Functions integration: registerCreator/registerResponder/deleteR
       });
     });
 
-    // 3) participant writes state=3 (rules allow)
-    await assertSucceeds(set(ref(creatorDb, `/rooms/${roomId}/meta/state`), 3));
+    // 3) participant writes deleteRequested once (rules allow)
+    await assertSucceeds(set(ref(creatorDb, `/rooms/${roomId}/meta/deleteRequested`), true));
 
     // 4) function should delete room
     await waitRoomDeletedAdmin(env, roomId, 25_000);
