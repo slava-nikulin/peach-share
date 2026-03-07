@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/nursery/noUnresolvedImports: test file */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { RulesTestContext, RulesTestEnvironment } from '@firebase/rules-unit-testing';
@@ -517,7 +518,9 @@ describe('RTDB security rules: deleteRequested create-once semantics (isolated n
       await seedAllMessagesPresent(isolatedEnv, roomId);
 
       const creatorDb = isolatedEnv.authenticatedContext(creator).database() as unknown as Database;
-      const responderDb = isolatedEnv.authenticatedContext(responder).database() as unknown as Database;
+      const responderDb = isolatedEnv
+        .authenticatedContext(responder)
+        .database() as unknown as Database;
 
       await assertSucceeds(set(ref(creatorDb, `/rooms/${roomId}/meta/deleteRequested`), true));
 
