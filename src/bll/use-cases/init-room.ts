@@ -9,7 +9,7 @@ export interface RoomInitial {
 }
 
 export interface InitRoomRepositoryPort {
-  roomExists(roomId: string): Promise<boolean>;
+  isRoomJoinable(roomId: string): Promise<boolean>;
 }
 
 export class InitRoomUseCase {
@@ -38,16 +38,16 @@ export class InitRoomUseCase {
     // current проверяем первым — логика приоритета сохраняется
     const top = otpEntries[0];
     const id0 = uint8ArrayToBase64(await this.kdf.deriveRoomId(prs, top.otp), { urlSafe: true });
-    const id0Exists = await this.roomsRepo.roomExists(id0);
-    if (id0Exists) {
+    const id0Joinable = await this.roomsRepo.isRoomJoinable(id0);
+    if (id0Joinable) {
       return { intent: 'join', roomId: id0 };
     }
 
     for (const entry of otpEntries.slice(1)) {
       // biome-ignore lint/performance/noAwaitInLoops: todo refactor
       const id = uint8ArrayToBase64(await this.kdf.deriveRoomId(prs, entry.otp), { urlSafe: true });
-      const exists = await this.roomsRepo.roomExists(id);
-      if (exists) {
+      const joinable = await this.roomsRepo.isRoomJoinable(id);
+      if (joinable) {
         return { intent: 'join', roomId: id };
       }
     }

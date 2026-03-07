@@ -291,7 +291,7 @@ export class RtdbRoomRepository implements RoomRepositoryPort {
 
   // ---- RoomRepositoryPort ----
 
-  async roomExists(roomId: string): Promise<boolean> {
+  async isRoomJoinable(roomId: string): Promise<boolean> {
     const meta = await this.readRoomMeta(roomId);
     if (meta.deleteRequested) return false;
 
@@ -310,7 +310,6 @@ export class RtdbRoomRepository implements RoomRepositoryPort {
   async finalize(roomId: string): Promise<void> {
     const meta = await this.readRoomMeta(roomId);
     if (meta.deleteRequested) return;
-    if (meta.state !== 1 && meta.state !== 2) return;
 
     // best-effort: может быть PERMISSION_DENIED, если правила запрещают
     try {
