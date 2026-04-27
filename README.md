@@ -1,5 +1,5 @@
 # PeachShare — P2P file exchange
-
+https://slava-nikulin.github.io/peach-share/
 - **WebRTC DataChannel** for direct P2P transport (file + control protocol)
 - **Firebase Realtime Database** as signaling + rendezvous (no payload storage)
 - **PAKE (CPace)** to derive a shared session key from a human-entered PRS
